@@ -1,0 +1,26 @@
+services:
+  postgres:
+    image: postgres:latest
+    hostname: postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: testdb
+      POSTGRES_USER: testuser
+      POSTGRES_PASSWORD: testpasswd
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+  create-tables:
+    image: postgres:latest
+    command:
+      - psql
+      - postgresql://testuser:testpasswd@postgres/testdb
+      - --file=/testdata/test-schema.sql
+    volumes:
+      - ./test-schema.sql:/testdata/test-schema.sql:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
