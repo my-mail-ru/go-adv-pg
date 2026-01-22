@@ -48,19 +48,19 @@ _generated (e.g. model_generated.go for the source file model.go).
 Every [Table] describing the model ${Model} declared in the source file causes the
 generation of the following entities:
   - Query constants (sqlSelect..., sqlInsert... and so on) containing SQL query parts,
-  - The Tuple type named ${Model}Tuple, if the [ActiveRecord] isn't disabled,
+  - The Record type named ${Model}Record, if the [ActiveRecord] isn't disabled,
   - Accessor methods: Getters for every column, and Setters for every updatable column, and
     Mutators, if the [ActiveRecord] isn't disabled.
-    The receiver type for these methods is the Tuple type,
+    The receiver type for these methods is the Record type,
   - Query methods (querySelect..., queryInsert and so on) that return the type implementing the [Query] interface. The receiver type for these
-    methods is the Tuple type (or the ${Model} itself if the [ActiveRecord] is disabled),
+    methods is the Record type (or the ${Model} itself if the [ActiveRecord] is disabled),
   - The DAO type, if it isn't specified explicitly by a developer (concerns both the default and explicitly
     declared DAOs),
-  - Database access methods ([Select], [Insert], [Update], [Delete]) that accept keys or Tuple values (or the ${Model}
+  - Database access methods ([Select], [Insert], [Update], [Delete]) that accept keys or Record values (or the ${Model}
     if the [ActiveRecord] is disabled). The receiver type for these methods is the DAO type. The first
     argument of all these methods is always the [context.Context].
 
-The Tuple type, accessors, the DAO type, and database access methods are exported, other entities are not.
+The Record type, accessors, the DAO type, and database access methods are exported, other entities are not.
 Exported entities represent a public API of the model, and non-exported ones can be used to
 extend this public API with custom database access methods (like cross-table joins).
 
@@ -71,14 +71,16 @@ an object instance in memory to a database table record. This project treats Act
   - High-level database access for a defined user type. The developer declares tables, indices,
     and properties of some fields, then the queries and database access methods are generated automatically,
   - Direct access to the object fields is restricted (i.e. is possible only from inside the
-    model package), and generated Getters and Setters have to be used for it,
+    model package), and generated Getter and Setter methods of a Record type  have to be used for it,
   - The Update database access method updates only the fields that were changed since
     the previous Select, Insert or Update operation. If no fields were changed, the Update
     operation is omitted,
   - Mutators can be used to implement concurrency-safe counters in a table.
 
 When the ActiveRecord is disabled (DisableActiveRecord in a [Table] definition), no Update or accessor
-methods are generated, but you can access the object fields directly (no additional Tuple type is generated).
+methods are generated, but you can access the object fields directly (no additional Record type is generated).
+
+To simplify a record initialization, the Record() method of the Model is generated.
 
 # Select
 
@@ -100,21 +102,21 @@ IsMulti, IsUniq, and also the count of the index keys determine the possible com
 arguments and returned values:
 
   - IsMulti: false, IsUniq: true: the Select method accepts index key fields as separate arguments.
-    Exactly one record is returned by value of the Tuple type (or the ${Model} type itself when
+    Exactly one record is returned by value of the Record type (or the ${Model} type itself when
     the [ActiveRecord] is disabled). The [sql.ErrNoRows] error is returned if no record corresponding to
     the Select method arguments is found.
 
   - IsMulti: false, IsUniq: false: the Select method accepts index key fields as separate arguments.
-    A slice of []Tuple (or []${Model) type is returned. Empty `SELECT` responses aren't
+    A slice of []Record (or []${Model) type is returned. Empty `SELECT` responses aren't
     considered as errors and simply return an empty slice.
 
   - IsMulti: true, a single-key index: the Select method accepts a key slice.
-    A slice of []Tuple (or []${Model) type is returned. Empty `SELECT` responses aren't
+    A slice of []Record (or []${Model) type is returned. Empty `SELECT` responses aren't
     considered as errors and simply return an empty slice.
 
   - IsMulti: true, a multi-key index: the Select method accepts a slice of the generated
     type, which name is the Select method name with "Key" appended.
-    A slice of []Tuple (or []${Model) type is returned. Empty `SELECT` responses aren't
+    A slice of []Record (or []${Model) type is returned. Empty `SELECT` responses aren't
     considered as errors and simply return an empty slice.
 
 Examples:
@@ -156,7 +158,7 @@ Only the error value is returned by the Deleter.
 
 # Insert
 
-The Insert DAO method takes two arguments: the [context.Context], and a pointer to the Tuple
+The Insert DAO method takes two arguments: the [context.Context], and a pointer to the Record
 (or to ${Model} directly if [ActiveRecord] is disabled for a table).
 
   - All the fields except for those having DisableInsert and InitByStorage set to true
@@ -177,7 +179,7 @@ The Insert DAO method takes two arguments: the [context.Context], and a pointer 
   - If the UpdateOnConflict is set to true for the [Table], and there are fields with
     mutators enabled (EnableMutators: true in the [Field] definition), mutators are updated
     as usual (using an incremental counter rather than setting the value directly), and the actual
-    value is returned from the table back to the Tuple/Model value,
+    value is returned from the table back to the Record/Model value,
 
     UpdateOnConflict may not be used with tables with InitByStorage primary keys.
 
@@ -196,7 +198,7 @@ The update operation is represented by two methods:
     is non-zero.
   - Update (aka "smart" Update). Like FullUpdate, it requires a primary key to be declared.
     Requires [ActiveRecord] (i.e. DisableActiveRecord set to false for a [Table]).
-    The Tuple type's Setter methods and mutator (Inc/Dec/Add) methods track data changes.
+    The Record type's Setter methods and mutator (Inc/Dec/Add) methods track data changes.
     Only the changed fields (i.e. on which the Set method is called, or which
     mutator counter is non-zero) are mentioned in the SET clause of the UPDATE query.
     If a record has no changed fields and there are no mutator fields defined, the
@@ -225,9 +227,9 @@ the Update operation will be converted to Select to retrieve actual values from 
 
 Mutator methods are:
 
-  - IncFieldName - increments the mutator counter inside the Tuple struct by 1,
-  - DecFieldName - decrements the mutator counter inside the Tuple struct by 1,
-  - AddFieldName(x int) - adds x (possibly negative) to the mutator counter inside the Tuple struct.
+  - IncFieldName - increments the mutator counter inside the Record struct by 1,
+  - DecFieldName - decrements the mutator counter inside the Record struct by 1,
+  - AddFieldName(x int) - adds x (possibly negative) to the mutator counter inside the Record struct.
 
 [ActiveRecord]: https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-ActiveRecord
 [Select]: https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-Select

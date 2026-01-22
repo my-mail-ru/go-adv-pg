@@ -78,15 +78,15 @@ type Table struct {
 	DAO string
 
 	// DisableActiveRecord set to `true` disables:
-	//  - generation of Tuple type. The Model type itself will be accepted/returned by the DAO methods.
-	//  - generation of accessor methods (Get/Set)
+	//  - generation of Record type. The Model type itself will be accepted/returned by the DAO methods.
+	//  - generation of accessor methods (getters/setters)
 	//  - mutators
 	//  - generation of "smart" Update methods (only the FullUpdate method will be generated)
 	//
 	// Use it for tables with simple schemas or for "SELECT-only" data.
 	DisableActiveRecord bool
 
-	// EnableLock isn't implemented yet. Avoid using the Model (or Tuple) types from
+	// EnableLock isn't implemented yet. Avoid using the Model (or Record) types from
 	// multiple goroutines!
 	EnableLock bool // TODO
 
@@ -95,7 +95,7 @@ type Table struct {
 	// Also known as "UPSERT".
 	//
 	// A primary key is required for tables with UpdateOnConflict enabled.
-	UpdateOnConflict bool // aka UPSERT. primary key is required.
+	UpdateOnConflict bool
 
 	// OnConflictDoNothing issues `ON CONFLICT DO NOTHING` for `INSERT` queries.
 	// A primary key is required for tables with UpdateOnConflict enabled.
@@ -300,9 +300,9 @@ type DB interface {
 }
 
 type Query interface {
-	GetSQL() string
-	GetArgs() []any
-	GetResults() []any
+	SQL() string
+	Args() []any
+	Results() []any
 }
 
 // StringWriter is implemented by [strings.Builder] and [bytes.Buffer], among others.
@@ -314,30 +314,38 @@ type StringWriter interface {
 // SimpleQuery is a "static" query that isn't indended for modification.
 // Implements the [Query] interface.
 type SimpleQuery struct {
-	SQL     string
-	Args    []any
-	Results []any
+	sql     string
+	args    []any
+	results []any
 }
 
 var _ Query = &SimpleQuery{}
 
-func (q *SimpleQuery) GetSQL() string {
-	return q.SQL
+func NewSimpleQuery(sql string, args, results []any) *SimpleQuery {
+	return &SimpleQuery{
+		sql:     sql,
+		args:    args,
+		results: results,
+	}
 }
 
-func (q *SimpleQuery) GetArgs() []any {
-	return q.Args
+func (q *SimpleQuery) SQL() string {
+	return q.sql
 }
 
-func (q *SimpleQuery) GetResults() []any {
-	return q.Results
+func (q *SimpleQuery) Args() []any {
+	return q.args
+}
+
+func (q *SimpleQuery) Results() []any {
+	return q.results
 }
 
 // QueryBuilder is a dynamic query builder. Implements the [Query] interface.
 type QueryBuilder struct {
-	SQL     StringWriter
-	Args    []any
-	Results []any
+	sql     StringWriter
+	args    []any
+	results []any
 }
 
 var _ Query = &QueryBuilder{}
@@ -348,14 +356,14 @@ func NewQueryBuilder(sql string) *QueryBuilder {
 	sb.WriteString(sql)
 
 	return &QueryBuilder{
-		SQL:     sb,
-		Args:    nil,
-		Results: nil,
+		sql:     sb,
+		args:    nil,
+		results: nil,
 	}
 }
 
 func (qb *QueryBuilder) AppendSQL(sql string) {
-	_, _ = qb.SQL.WriteString(sql)
+	_, _ = qb.sql.WriteString(sql)
 }
 
 func (qb *QueryBuilder) AppendPlaceholder() {
@@ -364,29 +372,33 @@ func (qb *QueryBuilder) AppendPlaceholder() {
 }
 
 func (qb *QueryBuilder) AppendPlaceholderNum() {
-	qb.AppendSQL(strconv.Itoa(len(qb.Args) + 1))
+	qb.AppendSQL(strconv.Itoa(len(qb.args) + 1))
 }
 
 func (qb *QueryBuilder) AppendArgs(arg any) {
-	qb.Args = append(qb.Args, arg)
+	qb.args = append(qb.args, arg)
 }
 
 func (qb *QueryBuilder) AppendResults(res any) {
-	qb.Results = append(qb.Results, res)
+	qb.results = append(qb.results, res)
 }
 
-func (qb *QueryBuilder) GetSQL() string {
-	if qb.SQL == nil {
+func (qb *QueryBuilder) SetResults(res []any) {
+	qb.results = res
+}
+
+func (qb *QueryBuilder) SQL() string {
+	if qb.sql == nil {
 		return ""
 	}
 
-	return qb.SQL.String()
+	return qb.sql.String()
 }
 
-func (qb *QueryBuilder) GetArgs() []any {
-	return qb.Args
+func (qb *QueryBuilder) Args() []any {
+	return qb.args
 }
 
-func (qb *QueryBuilder) GetResults() []any {
-	return qb.Results
+func (qb *QueryBuilder) Results() []any {
+	return qb.results
 }

@@ -76,33 +76,33 @@ func TestUserDAO(t *testing.T) {
 		user := User{
 			Name: "Test User",
 			Type: 2,
-		}.NewTuple()
+		}.Record()
 
 		must(t, userDAO.Insert(ctx, user))
 
-		if user.GetID() == 0 {
+		if user.ID() == 0 {
 			t.Fatal("ID isn't set")
 		}
 
-		userID = user.GetID()
+		userID = user.ID()
 
-		if user.GetCreatedAt().IsZero() {
+		if user.CreatedAt().IsZero() {
 			t.Fatal("CreatedAt isn't set")
 		}
 
-		if user.GetUpdatedAt().IsZero() {
+		if user.UpdatedAt().IsZero() {
 			t.Fatal("UpdatedAt isn't set")
 		}
 
-		if !user.GetCreatedAt().Equal(user.GetUpdatedAt()) {
-			t.Fatalf("CreatedAt(%v) != UpdatedAt(%v)", user.GetCreatedAt(), user.GetUpdatedAt())
+		if !user.CreatedAt().Equal(user.UpdatedAt()) {
+			t.Fatalf("CreatedAt(%v) != UpdatedAt(%v)", user.CreatedAt(), user.UpdatedAt())
 		}
 	})
 
 	t.Run("DisableUpdate", func(t *testing.T) {
-		_, failed := any(User{}.NewTuple()).(interface{ SetCreatedAt(time.Time) })
+		_, failed := any(User{}.Record()).(interface{ SetCreatedAt(time.Time) })
 		if failed {
-			t.Fatal("UserTuple shoultn't have SetCreatedAt method, but it has")
+			t.Fatal("UserRecord shouldn't have SetCreatedAt method, but it has")
 		}
 	})
 
@@ -110,11 +110,11 @@ func TestUserDAO(t *testing.T) {
 		user, err := userDAO.SelectByID(ctx, userID)
 		must(t, err)
 
-		user.SetName(user.GetName() + " Updated")
+		user.SetName(user.Name() + " Updated")
 		must(t, userDAO.Update(ctx, &user))
 
-		if !user.GetCreatedAt().Before(user.GetUpdatedAt()) {
-			t.Fatalf("CreatedAt(%v) should be before UpdatedAt(%v)", user.GetCreatedAt(), user.GetUpdatedAt())
+		if !user.CreatedAt().Before(user.UpdatedAt()) {
+			t.Fatalf("CreatedAt(%v) should be before UpdatedAt(%v)", user.CreatedAt(), user.UpdatedAt())
 		}
 	})
 
@@ -122,7 +122,7 @@ func TestUserDAO(t *testing.T) {
 		user1, err := userDAO.SelectByID(ctx, userID)
 		must(t, err)
 
-		initialPostCount := user1.GetPostCount()
+		initialPostCount := user1.PostCount()
 		if initialPostCount != 1 {
 			t.Fatalf("EnableMutators with InitByStorage failed: got PostCount=%d, but 1 was expected", initialPostCount)
 		}
@@ -136,8 +136,8 @@ func TestUserDAO(t *testing.T) {
 		must(t, userDAO.Update(ctx, &user1))
 		must(t, userDAO.Update(ctx, &user2))
 
-		if user2.GetPostCount() != initialPostCount+2 {
-			t.Fatalf("parallel mutator update: PostCount=%d, but %d was expected", user2.GetPostCount(), initialPostCount+2)
+		if user2.PostCount() != initialPostCount+2 {
+			t.Fatalf("parallel mutator update: PostCount=%d, but %d was expected", user2.PostCount(), initialPostCount+2)
 		}
 
 		user1.IncPostCount()
@@ -145,8 +145,8 @@ func TestUserDAO(t *testing.T) {
 		must(t, userDAO.Update(ctx, &user1))
 		must(t, userDAO.Update(ctx, &user2)) // Update of unchanged record should be converted to querySelectMutators
 
-		if user2.GetPostCount() != initialPostCount+3 {
-			t.Fatalf("unchanged update: PostCount=%d, but %d was expected", user2.GetPostCount(), initialPostCount+3)
+		if user2.PostCount() != initialPostCount+3 {
+			t.Fatalf("unchanged update: PostCount=%d, but %d was expected", user2.PostCount(), initialPostCount+3)
 		}
 	})
 
@@ -186,21 +186,21 @@ func TestUserDAO(t *testing.T) {
 		user2 := User{
 			Name: "Test User 2",
 			Type: 3,
-		}.NewTuple()
+		}.Record()
 
 		must(t, userDAO.Insert(ctx, user2))
 
 		got, err := userDAO.SelectMultiByIDType(ctx, []SelectMultiByIDTypeKey{
-			{ID: userID, Type: user1.GetType()},
+			{ID: userID, Type: user1.Type()},
 			{ID: -10, Type: -30},
-			{ID: user2.GetID(), Type: user2.GetType()},
+			{ID: user2.ID(), Type: user2.Type()},
 		})
 
 		must(t, err)
 
-		want := []UserTuple{*user2, user1}
+		want := []UserRecord{*user2, user1}
 
-		if diff := cmp.Diff(want, got, cmpopts.EquateComparable(UserTuple{})); diff != "" {
+		if diff := cmp.Diff(want, got, cmpopts.EquateComparable(UserRecord{})); diff != "" {
 			t.Fatal("result mismatch (-want +got):\n" + diff)
 		}
 	})
@@ -220,7 +220,7 @@ func TestUserDAO(t *testing.T) {
 		user := User{
 			ID:   -10,
 			Name: "Foobar",
-		}.NewTuple()
+		}.Record()
 
 		err := userDAO.FullUpdate(ctx, user)
 		if !errors.Is(err, sql.ErrNoRows) {
@@ -231,7 +231,7 @@ func TestUserDAO(t *testing.T) {
 	t.Run("Update non-existent key", func(t *testing.T) {
 		user := User{
 			ID: -10,
-		}.NewTuple()
+		}.Record()
 
 		user.SetName("foobar")
 
@@ -249,17 +249,17 @@ func createUserID(t *testing.T, db advpg.DB) int {
 		user := User{
 			Name: "Test User",
 			Type: 2,
-		}.NewTuple()
+		}.Record()
 
 		userDAO := NewUserDAO(db)
 
 		must(t, userDAO.Insert(t.Context(), user))
 
-		if user.GetID() == 0 {
+		if user.ID() == 0 {
 			t.Fatal("ID isn't set")
 		}
 
-		userID = user.GetID()
+		userID = user.ID()
 	})
 
 	return userID
@@ -277,21 +277,21 @@ func TestExtLinkDAO(t *testing.T) {
 			ExternalID: 123,
 			CreatedAt:  now,
 			Status:     1,
-		}.NewTuple()
+		}.Record()
 
 		must(t, extDAO.Insert(ctx, ext))
 		ext.SetStatus(2)
 		must(t, extDAO.Insert(ctx, ext))
 
-		got, err := extDAO.SelectByPrimaryKey(ctx, ext.GetUserID(), ext.GetExternalID())
+		got, err := extDAO.SelectByPrimaryKey(ctx, ext.UserID(), ext.ExternalID())
 		must(t, err)
 
-		if got.GetStatus() != ext.GetStatus() {
-			t.Fatalf("Status after Insert with UpdateOnConflict: got %d, want %d", got.GetStatus(), ext.GetStatus())
+		if got.Status() != ext.Status() {
+			t.Fatalf("Status after Insert with UpdateOnConflict: got %d, want %d", got.Status(), ext.Status())
 		}
 
-		if got.GetCreatedAt() != now {
-			t.Fatalf("CreatedAt: got %v, expected %v", got.GetCreatedAt(), now)
+		if got.CreatedAt() != now {
+			t.Fatalf("CreatedAt: got %v, expected %v", got.CreatedAt(), now)
 		}
 	})
 
@@ -301,11 +301,11 @@ func TestExtLinkDAO(t *testing.T) {
 			ExternalID: 1234,
 			CreatedAt:  now,
 			Status:     1,
-		}.NewTuple()
+		}.Record()
 
 		must(t, extDAO.Insert(ctx, ext))
 
-		initialLinkCount := ext.GetLinkCount()
+		initialLinkCount := ext.LinkCount()
 		if initialLinkCount != 1 {
 			t.Fatalf("EnableMutators with InitByStorage failed: got LinkCount=%d, but 1 was expected", initialLinkCount)
 		}
@@ -313,11 +313,11 @@ func TestExtLinkDAO(t *testing.T) {
 		ext.IncLinkCount()
 		must(t, extDAO.Insert(ctx, ext))
 
-		got, err := extDAO.SelectByPrimaryKey(ctx, ext.GetUserID(), ext.GetExternalID())
+		got, err := extDAO.SelectByPrimaryKey(ctx, ext.UserID(), ext.ExternalID())
 		must(t, err)
 
-		if got.GetLinkCount() != initialLinkCount+1 {
-			t.Fatalf("LinkCount after Insert with UpdateOnConflict: got %d, want %d", got.GetLinkCount(), initialLinkCount+1)
+		if got.LinkCount() != initialLinkCount+1 {
+			t.Fatalf("LinkCount after Insert with UpdateOnConflict: got %d, want %d", got.LinkCount(), initialLinkCount+1)
 		}
 	})
 }
@@ -333,7 +333,7 @@ func TestUserViewsDAO(t *testing.T) {
 		views := UserViews{
 			UserID: userID,
 			Views:  initialViews,
-		}.NewTuple()
+		}.Record()
 
 		must(t, viewsDAO.Insert(ctx, views))
 
@@ -350,8 +350,8 @@ func TestUserViewsDAO(t *testing.T) {
 
 		must(t, err)
 
-		if got.GetViews() != initialViews+2 {
-			t.Fatalf("Views after Insert with UpdateOnConflict: got %d, want %d", got.GetViews(), initialViews+2)
+		if got.Views() != initialViews+2 {
+			t.Fatalf("Views after Insert with UpdateOnConflict: got %d, want %d", got.Views(), initialViews+2)
 		}
 	})
 }
@@ -364,11 +364,11 @@ func TestSeenDAO(t *testing.T) {
 	t.Run("OnConflictDoNothing", func(t *testing.T) {
 		seen := Seen{
 			UserID: userID,
-		}.NewTuple()
+		}.Record()
 
 		must(t, seenDAO.Insert(ctx, seen))
 
-		origSeenAt := seen.GetSeenAt()
+		origSeenAt := seen.SeenAt()
 
 		seen.SetSeenAt(origSeenAt.Add(time.Hour))
 		must(t, seenDAO.Insert(ctx, seen))
@@ -377,8 +377,8 @@ func TestSeenDAO(t *testing.T) {
 
 		must(t, err)
 
-		if got.GetSeenAt() != origSeenAt {
-			t.Fatalf("SeenAt was modified, but it shouldn't: got %v, want %v", got.GetSeenAt(), origSeenAt)
+		if got.SeenAt() != origSeenAt {
+			t.Fatalf("SeenAt was modified, but it shouldn't: got %v, want %v", got.SeenAt(), origSeenAt)
 		}
 	})
 

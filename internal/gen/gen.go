@@ -235,10 +235,10 @@ func (tm *TableModel) IterateInsertArgs() iter.Seq2[int, InsertArgColumn] {
 	}
 }
 
-func (tm *TableModel) TupleType() string {
+func (tm *TableModel) RecordType() string {
 	if tm.DisableActiveRecord {
 		return tm.GoName // the struct type name as declared by a developer
 	}
 
-	return tm.GoName + "Tuple" // generated struct
+	return tm.GoName + "Record" // generated struct
 }

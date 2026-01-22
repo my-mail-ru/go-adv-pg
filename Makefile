@@ -48,9 +48,6 @@ test-integration: dev-env-start
 	    ./...                            && \
 	$(GO) tool cover -html cover.integration.out -o cover.integration.html
 
-#.PHONY: test-conf
-#test-conf: testdata/clickhouse_stats_integration_test_conf.cdb
-
 #%.cdb: %.yaml
 #	$(GO) tool yaml2cdb -in $< -out $@
 

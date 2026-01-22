@@ -23,63 +23,63 @@ const (
 	sqlSelectMutatorsUser  = `SELECT post_count FROM users WHERE id=$1`
 )
 
-type UserTuple struct {
+type UserRecord struct {
 	updateMask   uint64
 	data         User
 	mutPostCount int
 }
 
-func (data User) NewTuple() *UserTuple {
-	return &UserTuple{data: data}
+func (data User) Record() *UserRecord {
+	return &UserRecord{data: data}
 }
 
-func (model *UserTuple) GetID() int {
+func (model *UserRecord) ID() int {
 	return model.data.ID
 }
 
-func (model *UserTuple) GetName() string {
+func (model *UserRecord) Name() string {
 	return model.data.Name
 }
 
-func (model *UserTuple) GetType() int {
+func (model *UserRecord) Type() int {
 	return model.data.Type
 }
 
-func (model *UserTuple) GetPostCount() int {
+func (model *UserRecord) PostCount() int {
 	return model.data.PostCount
 }
 
-func (model *UserTuple) GetCreatedAt() time.Time {
+func (model *UserRecord) CreatedAt() time.Time {
 	return model.data.CreatedAt
 }
 
-func (model *UserTuple) GetUpdatedAt() time.Time {
+func (model *UserRecord) UpdatedAt() time.Time {
 	return model.data.UpdatedAt
 }
 
-func (model *UserTuple) SetName(x string) {
+func (model *UserRecord) SetName(x string) {
 	model.data.Name = x
 	model.updateMask |= 1
 }
 
-func (model *UserTuple) SetType(x int) {
+func (model *UserRecord) SetType(x int) {
 	model.data.Type = x
 	model.updateMask |= 2
 }
 
-func (model *UserTuple) IncPostCount() {
+func (model *UserRecord) IncPostCount() {
 	model.mutPostCount++
 }
 
-func (model *UserTuple) DecPostCount() {
+func (model *UserRecord) DecPostCount() {
 	model.mutPostCount--
 }
 
-func (model *UserTuple) AddPostCount(x int) {
+func (model *UserRecord) AddPostCount(x int) {
 	model.mutPostCount += x
 }
 
-func (*UserTuple) Table() string {
+func (*UserRecord) Table() string {
 	return "users"
 }
 
@@ -91,33 +91,34 @@ func NewUserDAO(db advpg.DB) UserDAO {
 	return UserDAO{db: db}
 }
 
-func (model *UserTuple) querySelectByID(inID int) *advpg.SimpleQuery {
-	return &advpg.SimpleQuery{
-		SQL:     sqlSelectUser + ` WHERE id=$1`,
-		Args:    []any{inID},
-		Results: []any{&model.data.ID, &model.data.Name, &model.data.Type, &model.data.PostCount, &model.data.CreatedAt, &model.data.UpdatedAt},
-	}
+func (model *UserRecord) querySelectByID(inID int) *advpg.SimpleQuery {
+	return advpg.NewSimpleQuery(
+		sqlSelectUser+` WHERE id=$1`,
+		[]any{inID},
+		[]any{&model.data.ID, &model.data.Name, &model.data.Type, &model.data.PostCount, &model.data.CreatedAt, &model.data.UpdatedAt},
+	)
 }
 
-func (model *UserTuple) queryDeleteByID(inID int) *advpg.SimpleQuery {
-	return &advpg.SimpleQuery{
-		SQL:  `DELETE FROM users WHERE id=$1`,
-		Args: []any{inID},
-	}
+func (model *UserRecord) queryDeleteByID(inID int) *advpg.SimpleQuery {
+	return advpg.NewSimpleQuery(
+		`DELETE FROM users WHERE id=$1`,
+		[]any{inID},
+		nil,
+	)
 }
 
-func (dao UserDAO) SelectByID(ctx context.Context, inID int) (UserTuple, error) {
-	var data UserTuple
+func (dao UserDAO) SelectByID(ctx context.Context, inID int) (UserRecord, error) {
+	var data UserRecord
 	q := data.querySelectByID(inID)
-	row := dao.db.QueryRow(ctx, q.GetSQL(), q.GetArgs()...)
-	err := row.Scan(q.GetResults()...)
+	row := dao.db.QueryRow(ctx, q.SQL(), q.Args()...)
+	err := row.Scan(q.Results()...)
 
 	return data, err
 }
 
 func (dao UserDAO) DeleteByID(ctx context.Context, inID int) error {
-	q := (*UserTuple)(nil).queryDeleteByID(inID)
-	ct, err := dao.db.Exec(ctx, q.GetSQL(), q.GetArgs()...)
+	q := (*UserRecord)(nil).queryDeleteByID(inID)
+	ct, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
 	if err != nil {
 		return err
 	}
@@ -134,7 +135,7 @@ type SelectMultiByIDTypeKey struct {
 	Type int
 }
 
-func (model *UserTuple) querySelectMultiByIDType(keys []SelectMultiByIDTypeKey) *advpg.QueryBuilder {
+func (model *UserRecord) querySelectMultiByIDType(keys []SelectMultiByIDTypeKey) *advpg.QueryBuilder {
 	if len(keys) == 0 {
 		return &advpg.QueryBuilder{}
 
@@ -158,12 +159,12 @@ func (model *UserTuple) querySelectMultiByIDType(keys []SelectMultiByIDTypeKey) 
 	}
 
 	q.AppendSQL(`) ORDER BY created_at DESC`)
-	q.Results = []any{&model.data.ID, &model.data.Name, &model.data.Type, &model.data.PostCount, &model.data.CreatedAt, &model.data.UpdatedAt}
+	q.SetResults([]any{&model.data.ID, &model.data.Name, &model.data.Type, &model.data.PostCount, &model.data.CreatedAt, &model.data.UpdatedAt})
 
 	return q
 }
 
-func (model *UserTuple) queryDeleteMultiByIDType(keys []SelectMultiByIDTypeKey) *advpg.QueryBuilder {
+func (model *UserRecord) queryDeleteMultiByIDType(keys []SelectMultiByIDTypeKey) *advpg.QueryBuilder {
 	if len(keys) == 0 {
 		return &advpg.QueryBuilder{}
 
@@ -191,21 +192,21 @@ func (model *UserTuple) queryDeleteMultiByIDType(keys []SelectMultiByIDTypeKey) 
 	return q
 }
 
-func (dao UserDAO) SelectMultiByIDType(ctx context.Context, keys []SelectMultiByIDTypeKey) ([]UserTuple, error) {
-	var data UserTuple
+func (dao UserDAO) SelectMultiByIDType(ctx context.Context, keys []SelectMultiByIDTypeKey) ([]UserRecord, error) {
+	var data UserRecord
 	q := data.querySelectMultiByIDType(keys)
 
-	rows, err := dao.db.Query(ctx, q.GetSQL(), q.GetArgs()...)
+	rows, err := dao.db.Query(ctx, q.SQL(), q.Args()...)
 	if err != nil {
 		return nil, err
 	}
 
 	defer rows.Close()
 
-	ret := ([]UserTuple)(nil)
+	ret := ([]UserRecord)(nil)
 
 	for rows.Next() {
-		if err = rows.Scan(q.GetResults()...); err != nil {
+		if err = rows.Scan(q.Results()...); err != nil {
 			return nil, err
 		}
 
@@ -220,41 +221,42 @@ func (dao UserDAO) SelectMultiByIDType(ctx context.Context, keys []SelectMultiBy
 }
 
 func (dao UserDAO) DeleteMultiByIDType(ctx context.Context, keys []SelectMultiByIDTypeKey) error {
-	q := (*UserTuple)(nil).queryDeleteMultiByIDType(keys)
-	_, err := dao.db.Exec(ctx, q.GetSQL(), q.GetArgs()...)
+	q := (*UserRecord)(nil).queryDeleteMultiByIDType(keys)
+	_, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
 	return err
 }
 
-func (model *UserTuple) querySelectByName(inName string) *advpg.SimpleQuery {
-	return &advpg.SimpleQuery{
-		SQL:     sqlSelectUser + ` WHERE name=$1`,
-		Args:    []any{inName},
-		Results: []any{&model.data.ID, &model.data.Name, &model.data.Type, &model.data.PostCount, &model.data.CreatedAt, &model.data.UpdatedAt},
-	}
+func (model *UserRecord) querySelectByName(inName string) *advpg.SimpleQuery {
+	return advpg.NewSimpleQuery(
+		sqlSelectUser+` WHERE name=$1`,
+		[]any{inName},
+		[]any{&model.data.ID, &model.data.Name, &model.data.Type, &model.data.PostCount, &model.data.CreatedAt, &model.data.UpdatedAt},
+	)
 }
 
-func (model *UserTuple) queryDeleteByName(inName string) *advpg.SimpleQuery {
-	return &advpg.SimpleQuery{
-		SQL:  `DELETE FROM users WHERE name=$1`,
-		Args: []any{inName},
-	}
+func (model *UserRecord) queryDeleteByName(inName string) *advpg.SimpleQuery {
+	return advpg.NewSimpleQuery(
+		`DELETE FROM users WHERE name=$1`,
+		[]any{inName},
+		nil,
+	)
 }
 
-func (dao UserDAO) SelectByName(ctx context.Context, inName string) ([]UserTuple, error) {
-	var data UserTuple
+func (dao UserDAO) SelectByName(ctx context.Context, inName string) ([]UserRecord, error) {
+	var data UserRecord
 	q := data.querySelectByName(inName)
 
-	rows, err := dao.db.Query(ctx, q.GetSQL(), q.GetArgs()...)
+	rows, err := dao.db.Query(ctx, q.SQL(), q.Args()...)
 	if err != nil {
 		return nil, err
 	}
 
 	defer rows.Close()
 
-	ret := ([]UserTuple)(nil)
+	ret := ([]UserRecord)(nil)
 
 	for rows.Next() {
-		if err = rows.Scan(q.GetResults()...); err != nil {
+		if err = rows.Scan(q.Results()...); err != nil {
 			return nil, err
 		}
 
@@ -269,47 +271,47 @@ func (dao UserDAO) SelectByName(ctx context.Context, inName string) ([]UserTuple
 }
 
 func (dao UserDAO) DeleteByName(ctx context.Context, inName string) error {
-	q := (*UserTuple)(nil).queryDeleteByName(inName)
-	_, err := dao.db.Exec(ctx, q.GetSQL(), q.GetArgs()...)
+	q := (*UserRecord)(nil).queryDeleteByName(inName)
+	_, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
 	return err
 }
 
-func (model *UserTuple) queryInsert() *advpg.SimpleQuery {
-	return &advpg.SimpleQuery{
-		SQL:     sqlInsertUser,
-		Args:    []any{model.data.Name, model.data.Type},
-		Results: []any{&model.data.ID, &model.data.PostCount, &model.data.CreatedAt, &model.data.UpdatedAt},
-	}
+func (model *UserRecord) queryInsert() *advpg.SimpleQuery {
+	return advpg.NewSimpleQuery(
+		sqlInsertUser,
+		[]any{model.data.Name, model.data.Type},
+		[]any{&model.data.ID, &model.data.PostCount, &model.data.CreatedAt, &model.data.UpdatedAt},
+	)
 }
 
-func (dao UserDAO) Insert(ctx context.Context, data *UserTuple) error {
+func (dao UserDAO) Insert(ctx context.Context, data *UserRecord) error {
 	q := data.queryInsert()
-	err := dao.db.QueryRow(ctx, q.GetSQL(), q.GetArgs()...).Scan(q.GetResults()...)
+	err := dao.db.QueryRow(ctx, q.SQL(), q.Args()...).Scan(q.Results()...)
 
 	return err
 }
 
-func (model *UserTuple) queryFullUpdate() *advpg.SimpleQuery {
-	return &advpg.SimpleQuery{
-		SQL:     sqlFullUpdateUser + " WHERE id=$4" + sqlUpdateReturningUser,
-		Args:    []any{model.data.Name, model.data.Type, model.mutPostCount, model.data.ID},
-		Results: []any{&model.data.PostCount, &model.data.UpdatedAt},
-	}
+func (model *UserRecord) queryFullUpdate() *advpg.SimpleQuery {
+	return advpg.NewSimpleQuery(
+		sqlFullUpdateUser+" WHERE id=$4"+sqlUpdateReturningUser,
+		[]any{model.data.Name, model.data.Type, model.mutPostCount, model.data.ID},
+		[]any{&model.data.PostCount, &model.data.UpdatedAt},
+	)
 }
 
-func (dao UserDAO) FullUpdate(ctx context.Context, data *UserTuple) error {
+func (dao UserDAO) FullUpdate(ctx context.Context, data *UserRecord) error {
 	q := data.queryFullUpdate()
-	return dao.db.QueryRow(ctx, q.GetSQL(), q.GetArgs()...).Scan(q.GetResults()...)
+	return dao.db.QueryRow(ctx, q.SQL(), q.Args()...).Scan(q.Results()...)
 }
 
-func (model *UserTuple) queryUpdate() *advpg.QueryBuilder {
+func (model *UserRecord) queryUpdate() *advpg.QueryBuilder {
 	if model.updateMask == 0 && model.mutPostCount == 0 {
 		return &advpg.QueryBuilder{}
 	}
 
 	q := advpg.NewQueryBuilder(`UPDATE users SET`)
 	if model.updateMask&1 != 0 {
-		if len(q.Args) != 0 {
+		if len(q.Args()) != 0 {
 			q.AppendSQL(",")
 		}
 
@@ -318,7 +320,7 @@ func (model *UserTuple) queryUpdate() *advpg.QueryBuilder {
 		q.AppendArgs(model.data.Name)
 	}
 	if model.updateMask&2 != 0 {
-		if len(q.Args) != 0 {
+		if len(q.Args()) != 0 {
 			q.AppendSQL(",")
 		}
 
@@ -327,7 +329,7 @@ func (model *UserTuple) queryUpdate() *advpg.QueryBuilder {
 		q.AppendArgs(model.data.Type)
 	}
 	if model.mutPostCount != 0 {
-		if len(q.Args) != 0 {
+		if len(q.Args()) != 0 {
 			q.AppendSQL(",")
 		}
 
@@ -340,33 +342,33 @@ func (model *UserTuple) queryUpdate() *advpg.QueryBuilder {
 	q.AppendArgs(model.data.ID)
 
 	q.AppendSQL(sqlUpdateReturningUser)
-	q.Results = []any{&model.data.PostCount, &model.data.UpdatedAt}
+	q.SetResults([]any{&model.data.PostCount, &model.data.UpdatedAt})
 
 	return q
 }
 
-func (model *UserTuple) querySelectMutators() *advpg.SimpleQuery {
-	return &advpg.SimpleQuery{
-		SQL:     sqlSelectMutatorsUser,
-		Args:    []any{model.data.ID},
-		Results: []any{&model.data.PostCount},
-	}
+func (model *UserRecord) querySelectMutators() *advpg.SimpleQuery {
+	return advpg.NewSimpleQuery(
+		sqlSelectMutatorsUser,
+		[]any{model.data.ID},
+		[]any{&model.data.PostCount},
+	)
 }
 
-func (model *UserTuple) reset() {
+func (model *UserRecord) reset() {
 	model.updateMask = 0
 	model.mutPostCount = 0
 }
 
-func (dao UserDAO) Update(ctx context.Context, data *UserTuple) error {
+func (dao UserDAO) Update(ctx context.Context, data *UserRecord) error {
 	q := advpg.Query(data.queryUpdate())
-	query := q.GetSQL()
+	query := q.SQL()
 	if query == "" {
 		q = data.querySelectMutators()
-		query = q.GetSQL()
+		query = q.SQL()
 	}
 
-	err := dao.db.QueryRow(ctx, query, q.GetArgs()...).Scan(q.GetResults()...)
+	err := dao.db.QueryRow(ctx, query, q.Args()...).Scan(q.Results()...)
 	if err == nil {
 		data.reset()
 	}
@@ -384,66 +386,66 @@ const (
 	sqlSelectMutatorsExtLink  = `SELECT link_count FROM ext_links WHERE user_id=$1 AND ext_id=$2`
 )
 
-type ExtLinkTuple struct {
+type ExtLinkRecord struct {
 	updateMask   uint64
 	data         ExtLink
 	mutLinkCount int
 }
 
-func (data ExtLink) NewTuple() *ExtLinkTuple {
-	return &ExtLinkTuple{data: data}
+func (data ExtLink) Record() *ExtLinkRecord {
+	return &ExtLinkRecord{data: data}
 }
 
-func (model *ExtLinkTuple) GetUserID() int {
+func (model *ExtLinkRecord) UserID() int {
 	return model.data.UserID
 }
 
-func (model *ExtLinkTuple) GetExternalID() int {
+func (model *ExtLinkRecord) ExternalID() int {
 	return model.data.ExternalID
 }
 
-func (model *ExtLinkTuple) GetCreatedAt() MyTime {
+func (model *ExtLinkRecord) CreatedAt() MyTime {
 	return model.data.CreatedAt
 }
 
-func (model *ExtLinkTuple) GetStatus() int {
+func (model *ExtLinkRecord) Status() int {
 	return model.data.Status
 }
 
-func (model *ExtLinkTuple) GetLinkCount() int {
+func (model *ExtLinkRecord) LinkCount() int {
 	return model.data.LinkCount
 }
 
-func (model *ExtLinkTuple) SetUserID(x int) {
+func (model *ExtLinkRecord) SetUserID(x int) {
 	model.data.UserID = x
 }
 
-func (model *ExtLinkTuple) SetExternalID(x int) {
+func (model *ExtLinkRecord) SetExternalID(x int) {
 	model.data.ExternalID = x
 }
 
-func (model *ExtLinkTuple) SetCreatedAt(x MyTime) {
+func (model *ExtLinkRecord) SetCreatedAt(x MyTime) {
 	model.data.CreatedAt = x
 }
 
-func (model *ExtLinkTuple) SetStatus(x int) {
+func (model *ExtLinkRecord) SetStatus(x int) {
 	model.data.Status = x
 	model.updateMask |= 1
 }
 
-func (model *ExtLinkTuple) IncLinkCount() {
+func (model *ExtLinkRecord) IncLinkCount() {
 	model.mutLinkCount++
 }
 
-func (model *ExtLinkTuple) DecLinkCount() {
+func (model *ExtLinkRecord) DecLinkCount() {
 	model.mutLinkCount--
 }
 
-func (model *ExtLinkTuple) AddLinkCount(x int) {
+func (model *ExtLinkRecord) AddLinkCount(x int) {
 	model.mutLinkCount += x
 }
 
-func (*ExtLinkTuple) Table() string {
+func (*ExtLinkRecord) Table() string {
 	return "ext_links"
 }
 
@@ -455,33 +457,34 @@ func NewExtLinkDAO(db advpg.DB) ExtLinkDAO {
 	return ExtLinkDAO{db: db}
 }
 
-func (model *ExtLinkTuple) querySelectByPrimaryKey(inUserID int, inExternalID int) *advpg.SimpleQuery {
-	return &advpg.SimpleQuery{
-		SQL:     sqlSelectExtLink + ` WHERE user_id=$1 AND ext_id=$2`,
-		Args:    []any{inUserID, inExternalID},
-		Results: []any{&model.data.UserID, &model.data.ExternalID, &model.data.CreatedAt, &model.data.Status, &model.data.LinkCount},
-	}
+func (model *ExtLinkRecord) querySelectByPrimaryKey(inUserID int, inExternalID int) *advpg.SimpleQuery {
+	return advpg.NewSimpleQuery(
+		sqlSelectExtLink+` WHERE user_id=$1 AND ext_id=$2`,
+		[]any{inUserID, inExternalID},
+		[]any{&model.data.UserID, &model.data.ExternalID, &model.data.CreatedAt, &model.data.Status, &model.data.LinkCount},
+	)
 }
 
-func (model *ExtLinkTuple) queryDeleteByPrimaryKey(inUserID int, inExternalID int) *advpg.SimpleQuery {
-	return &advpg.SimpleQuery{
-		SQL:  `DELETE FROM ext_links WHERE user_id=$1 AND ext_id=$2`,
-		Args: []any{inUserID, inExternalID},
-	}
+func (model *ExtLinkRecord) queryDeleteByPrimaryKey(inUserID int, inExternalID int) *advpg.SimpleQuery {
+	return advpg.NewSimpleQuery(
+		`DELETE FROM ext_links WHERE user_id=$1 AND ext_id=$2`,
+		[]any{inUserID, inExternalID},
+		nil,
+	)
 }
 
-func (dao ExtLinkDAO) SelectByPrimaryKey(ctx context.Context, inUserID int, inExternalID int) (ExtLinkTuple, error) {
-	var data ExtLinkTuple
+func (dao ExtLinkDAO) SelectByPrimaryKey(ctx context.Context, inUserID int, inExternalID int) (ExtLinkRecord, error) {
+	var data ExtLinkRecord
 	q := data.querySelectByPrimaryKey(inUserID, inExternalID)
-	row := dao.db.QueryRow(ctx, q.GetSQL(), q.GetArgs()...)
-	err := row.Scan(q.GetResults()...)
+	row := dao.db.QueryRow(ctx, q.SQL(), q.Args()...)
+	err := row.Scan(q.Results()...)
 
 	return data, err
 }
 
 func (dao ExtLinkDAO) DeleteByPrimaryKey(ctx context.Context, inUserID int, inExternalID int) error {
-	q := (*ExtLinkTuple)(nil).queryDeleteByPrimaryKey(inUserID, inExternalID)
-	ct, err := dao.db.Exec(ctx, q.GetSQL(), q.GetArgs()...)
+	q := (*ExtLinkRecord)(nil).queryDeleteByPrimaryKey(inUserID, inExternalID)
+	ct, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
 	if err != nil {
 		return err
 	}
@@ -493,36 +496,37 @@ func (dao ExtLinkDAO) DeleteByPrimaryKey(ctx context.Context, inUserID int, inEx
 	return nil
 }
 
-func (model *ExtLinkTuple) querySelectMultiByStatus(inStatuses []int) *advpg.SimpleQuery {
-	return &advpg.SimpleQuery{
-		SQL:     sqlSelectExtLink + ` WHERE status=IN($1)`,
-		Args:    []any{inStatuses},
-		Results: []any{&model.data.UserID, &model.data.ExternalID, &model.data.CreatedAt, &model.data.Status, &model.data.LinkCount},
-	}
+func (model *ExtLinkRecord) querySelectMultiByStatus(inStatuses []int) *advpg.SimpleQuery {
+	return advpg.NewSimpleQuery(
+		sqlSelectExtLink+` WHERE status=IN($1)`,
+		[]any{inStatuses},
+		[]any{&model.data.UserID, &model.data.ExternalID, &model.data.CreatedAt, &model.data.Status, &model.data.LinkCount},
+	)
 }
 
-func (model *ExtLinkTuple) queryDeleteMultiByStatus(inStatuses []int) *advpg.SimpleQuery {
-	return &advpg.SimpleQuery{
-		SQL:  `DELETE FROM ext_links WHERE status=IN($1)`,
-		Args: []any{inStatuses},
-	}
+func (model *ExtLinkRecord) queryDeleteMultiByStatus(inStatuses []int) *advpg.SimpleQuery {
+	return advpg.NewSimpleQuery(
+		`DELETE FROM ext_links WHERE status=IN($1)`,
+		[]any{inStatuses},
+		nil,
+	)
 }
 
-func (dao ExtLinkDAO) SelectMultiByStatus(ctx context.Context, inStatuses []int) ([]ExtLinkTuple, error) {
-	var data ExtLinkTuple
+func (dao ExtLinkDAO) SelectMultiByStatus(ctx context.Context, inStatuses []int) ([]ExtLinkRecord, error) {
+	var data ExtLinkRecord
 	q := data.querySelectMultiByStatus(inStatuses)
 
-	rows, err := dao.db.Query(ctx, q.GetSQL(), q.GetArgs()...)
+	rows, err := dao.db.Query(ctx, q.SQL(), q.Args()...)
 	if err != nil {
 		return nil, err
 	}
 
 	defer rows.Close()
 
-	ret := ([]ExtLinkTuple)(nil)
+	ret := ([]ExtLinkRecord)(nil)
 
 	for rows.Next() {
-		if err = rows.Scan(q.GetResults()...); err != nil {
+		if err = rows.Scan(q.Results()...); err != nil {
 			return nil, err
 		}
 
@@ -537,47 +541,47 @@ func (dao ExtLinkDAO) SelectMultiByStatus(ctx context.Context, inStatuses []int)
 }
 
 func (dao ExtLinkDAO) DeleteMultiByStatus(ctx context.Context, inStatuses []int) error {
-	q := (*ExtLinkTuple)(nil).queryDeleteMultiByStatus(inStatuses)
-	_, err := dao.db.Exec(ctx, q.GetSQL(), q.GetArgs()...)
+	q := (*ExtLinkRecord)(nil).queryDeleteMultiByStatus(inStatuses)
+	_, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
 	return err
 }
 
-func (model *ExtLinkTuple) queryInsert() *advpg.SimpleQuery {
-	return &advpg.SimpleQuery{
-		SQL:     sqlInsertExtLink,
-		Args:    []any{model.data.UserID, model.data.ExternalID, model.data.CreatedAt, model.data.Status, model.mutLinkCount},
-		Results: []any{&model.data.LinkCount},
-	}
+func (model *ExtLinkRecord) queryInsert() *advpg.SimpleQuery {
+	return advpg.NewSimpleQuery(
+		sqlInsertExtLink,
+		[]any{model.data.UserID, model.data.ExternalID, model.data.CreatedAt, model.data.Status, model.mutLinkCount},
+		[]any{&model.data.LinkCount},
+	)
 }
 
-func (dao ExtLinkDAO) Insert(ctx context.Context, data *ExtLinkTuple) error {
+func (dao ExtLinkDAO) Insert(ctx context.Context, data *ExtLinkRecord) error {
 	q := data.queryInsert()
-	err := dao.db.QueryRow(ctx, q.GetSQL(), q.GetArgs()...).Scan(q.GetResults()...)
+	err := dao.db.QueryRow(ctx, q.SQL(), q.Args()...).Scan(q.Results()...)
 
 	return err
 }
 
-func (model *ExtLinkTuple) queryFullUpdate() *advpg.SimpleQuery {
-	return &advpg.SimpleQuery{
-		SQL:     sqlFullUpdateExtLink + " WHERE user_id=$3 AND ext_id=$4" + sqlUpdateReturningExtLink,
-		Args:    []any{model.data.Status, model.mutLinkCount, model.data.UserID, model.data.ExternalID},
-		Results: []any{&model.data.LinkCount},
-	}
+func (model *ExtLinkRecord) queryFullUpdate() *advpg.SimpleQuery {
+	return advpg.NewSimpleQuery(
+		sqlFullUpdateExtLink+" WHERE user_id=$3 AND ext_id=$4"+sqlUpdateReturningExtLink,
+		[]any{model.data.Status, model.mutLinkCount, model.data.UserID, model.data.ExternalID},
+		[]any{&model.data.LinkCount},
+	)
 }
 
-func (dao ExtLinkDAO) FullUpdate(ctx context.Context, data *ExtLinkTuple) error {
+func (dao ExtLinkDAO) FullUpdate(ctx context.Context, data *ExtLinkRecord) error {
 	q := data.queryFullUpdate()
-	return dao.db.QueryRow(ctx, q.GetSQL(), q.GetArgs()...).Scan(q.GetResults()...)
+	return dao.db.QueryRow(ctx, q.SQL(), q.Args()...).Scan(q.Results()...)
 }
 
-func (model *ExtLinkTuple) queryUpdate() *advpg.QueryBuilder {
+func (model *ExtLinkRecord) queryUpdate() *advpg.QueryBuilder {
 	if model.updateMask == 0 && model.mutLinkCount == 0 {
 		return &advpg.QueryBuilder{}
 	}
 
 	q := advpg.NewQueryBuilder(`UPDATE ext_links SET`)
 	if model.updateMask&1 != 0 {
-		if len(q.Args) != 0 {
+		if len(q.Args()) != 0 {
 			q.AppendSQL(",")
 		}
 
@@ -586,7 +590,7 @@ func (model *ExtLinkTuple) queryUpdate() *advpg.QueryBuilder {
 		q.AppendArgs(model.data.Status)
 	}
 	if model.mutLinkCount != 0 {
-		if len(q.Args) != 0 {
+		if len(q.Args()) != 0 {
 			q.AppendSQL(",")
 		}
 
@@ -602,33 +606,33 @@ func (model *ExtLinkTuple) queryUpdate() *advpg.QueryBuilder {
 	q.AppendArgs(model.data.ExternalID)
 
 	q.AppendSQL(sqlUpdateReturningExtLink)
-	q.Results = []any{&model.data.LinkCount}
+	q.SetResults([]any{&model.data.LinkCount})
 
 	return q
 }
 
-func (model *ExtLinkTuple) querySelectMutators() *advpg.SimpleQuery {
-	return &advpg.SimpleQuery{
-		SQL:     sqlSelectMutatorsExtLink,
-		Args:    []any{model.data.UserID, model.data.ExternalID},
-		Results: []any{&model.data.LinkCount},
-	}
+func (model *ExtLinkRecord) querySelectMutators() *advpg.SimpleQuery {
+	return advpg.NewSimpleQuery(
+		sqlSelectMutatorsExtLink,
+		[]any{model.data.UserID, model.data.ExternalID},
+		[]any{&model.data.LinkCount},
+	)
 }
 
-func (model *ExtLinkTuple) reset() {
+func (model *ExtLinkRecord) reset() {
 	model.updateMask = 0
 	model.mutLinkCount = 0
 }
 
-func (dao ExtLinkDAO) Update(ctx context.Context, data *ExtLinkTuple) error {
+func (dao ExtLinkDAO) Update(ctx context.Context, data *ExtLinkRecord) error {
 	q := advpg.Query(data.queryUpdate())
-	query := q.GetSQL()
+	query := q.SQL()
 	if query == "" {
 		q = data.querySelectMutators()
-		query = q.GetSQL()
+		query = q.SQL()
 	}
 
-	err := dao.db.QueryRow(ctx, query, q.GetArgs()...).Scan(q.GetResults()...)
+	err := dao.db.QueryRow(ctx, query, q.Args()...).Scan(q.Results()...)
 	if err == nil {
 		data.reset()
 	}
@@ -645,40 +649,40 @@ const (
 	sqlSelectMutatorsUserViews  = `SELECT views FROM user_views WHERE user_id=$1`
 )
 
-type UserViewsTuple struct {
+type UserViewsRecord struct {
 	data     UserViews
 	mutViews int
 }
 
-func (data UserViews) NewTuple() *UserViewsTuple {
-	return &UserViewsTuple{data: data}
+func (data UserViews) Record() *UserViewsRecord {
+	return &UserViewsRecord{data: data}
 }
 
-func (model *UserViewsTuple) GetUserID() int {
+func (model *UserViewsRecord) UserID() int {
 	return model.data.UserID
 }
 
-func (model *UserViewsTuple) GetViews() int {
+func (model *UserViewsRecord) Views() int {
 	return model.data.Views
 }
 
-func (model *UserViewsTuple) SetUserID(x int) {
+func (model *UserViewsRecord) SetUserID(x int) {
 	model.data.UserID = x
 }
 
-func (model *UserViewsTuple) IncViews() {
+func (model *UserViewsRecord) IncViews() {
 	model.mutViews++
 }
 
-func (model *UserViewsTuple) DecViews() {
+func (model *UserViewsRecord) DecViews() {
 	model.mutViews--
 }
 
-func (model *UserViewsTuple) AddViews(x int) {
+func (model *UserViewsRecord) AddViews(x int) {
 	model.mutViews += x
 }
 
-func (*UserViewsTuple) Table() string {
+func (*UserViewsRecord) Table() string {
 	return "user_views"
 }
 
@@ -690,33 +694,34 @@ func NewUserViewsDAO(db advpg.DB) UserViewsDAO {
 	return UserViewsDAO{db: db}
 }
 
-func (model *UserViewsTuple) querySelectByUserID(inUserID int) *advpg.SimpleQuery {
-	return &advpg.SimpleQuery{
-		SQL:     sqlSelectUserViews + ` WHERE user_id=$1`,
-		Args:    []any{inUserID},
-		Results: []any{&model.data.UserID, &model.data.Views},
-	}
+func (model *UserViewsRecord) querySelectByUserID(inUserID int) *advpg.SimpleQuery {
+	return advpg.NewSimpleQuery(
+		sqlSelectUserViews+` WHERE user_id=$1`,
+		[]any{inUserID},
+		[]any{&model.data.UserID, &model.data.Views},
+	)
 }
 
-func (model *UserViewsTuple) queryDeleteByUserID(inUserID int) *advpg.SimpleQuery {
-	return &advpg.SimpleQuery{
-		SQL:  `DELETE FROM user_views WHERE user_id=$1`,
-		Args: []any{inUserID},
-	}
+func (model *UserViewsRecord) queryDeleteByUserID(inUserID int) *advpg.SimpleQuery {
+	return advpg.NewSimpleQuery(
+		`DELETE FROM user_views WHERE user_id=$1`,
+		[]any{inUserID},
+		nil,
+	)
 }
 
-func (dao UserViewsDAO) SelectByUserID(ctx context.Context, inUserID int) (UserViewsTuple, error) {
-	var data UserViewsTuple
+func (dao UserViewsDAO) SelectByUserID(ctx context.Context, inUserID int) (UserViewsRecord, error) {
+	var data UserViewsRecord
 	q := data.querySelectByUserID(inUserID)
-	row := dao.db.QueryRow(ctx, q.GetSQL(), q.GetArgs()...)
-	err := row.Scan(q.GetResults()...)
+	row := dao.db.QueryRow(ctx, q.SQL(), q.Args()...)
+	err := row.Scan(q.Results()...)
 
 	return data, err
 }
 
 func (dao UserViewsDAO) DeleteByUserID(ctx context.Context, inUserID int) error {
-	q := (*UserViewsTuple)(nil).queryDeleteByUserID(inUserID)
-	ct, err := dao.db.Exec(ctx, q.GetSQL(), q.GetArgs()...)
+	q := (*UserViewsRecord)(nil).queryDeleteByUserID(inUserID)
+	ct, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
 	if err != nil {
 		return err
 	}
@@ -728,29 +733,29 @@ func (dao UserViewsDAO) DeleteByUserID(ctx context.Context, inUserID int) error 
 	return nil
 }
 
-func (model *UserViewsTuple) queryInsert() *advpg.SimpleQuery {
-	return &advpg.SimpleQuery{
-		SQL:     sqlInsertUserViews,
-		Args:    []any{model.data.UserID, model.data.Views + model.mutViews, model.mutViews},
-		Results: []any{&model.data.Views},
-	}
+func (model *UserViewsRecord) queryInsert() *advpg.SimpleQuery {
+	return advpg.NewSimpleQuery(
+		sqlInsertUserViews,
+		[]any{model.data.UserID, model.data.Views + model.mutViews, model.mutViews},
+		[]any{&model.data.Views},
+	)
 }
 
-func (dao UserViewsDAO) Insert(ctx context.Context, data *UserViewsTuple) error {
+func (dao UserViewsDAO) Insert(ctx context.Context, data *UserViewsRecord) error {
 	q := data.queryInsert()
-	err := dao.db.QueryRow(ctx, q.GetSQL(), q.GetArgs()...).Scan(q.GetResults()...)
+	err := dao.db.QueryRow(ctx, q.SQL(), q.Args()...).Scan(q.Results()...)
 
 	return err
 }
 
-func (model *UserViewsTuple) queryUpdate() *advpg.QueryBuilder {
+func (model *UserViewsRecord) queryUpdate() *advpg.QueryBuilder {
 	if model.mutViews == 0 {
 		return &advpg.QueryBuilder{}
 	}
 
 	q := advpg.NewQueryBuilder(`UPDATE user_views SET`)
 	if model.mutViews != 0 {
-		if len(q.Args) != 0 {
+		if len(q.Args()) != 0 {
 			q.AppendSQL(",")
 		}
 
@@ -763,32 +768,32 @@ func (model *UserViewsTuple) queryUpdate() *advpg.QueryBuilder {
 	q.AppendArgs(model.data.UserID)
 
 	q.AppendSQL(sqlUpdateReturningUserViews)
-	q.Results = []any{&model.data.Views}
+	q.SetResults([]any{&model.data.Views})
 
 	return q
 }
 
-func (model *UserViewsTuple) querySelectMutators() *advpg.SimpleQuery {
-	return &advpg.SimpleQuery{
-		SQL:     sqlSelectMutatorsUserViews,
-		Args:    []any{model.data.UserID},
-		Results: []any{&model.data.Views},
-	}
+func (model *UserViewsRecord) querySelectMutators() *advpg.SimpleQuery {
+	return advpg.NewSimpleQuery(
+		sqlSelectMutatorsUserViews,
+		[]any{model.data.UserID},
+		[]any{&model.data.Views},
+	)
 }
 
-func (model *UserViewsTuple) reset() {
+func (model *UserViewsRecord) reset() {
 	model.mutViews = 0
 }
 
-func (dao UserViewsDAO) Update(ctx context.Context, data *UserViewsTuple) error {
+func (dao UserViewsDAO) Update(ctx context.Context, data *UserViewsRecord) error {
 	q := advpg.Query(data.queryUpdate())
-	query := q.GetSQL()
+	query := q.SQL()
 	if query == "" {
 		q = data.querySelectMutators()
-		query = q.GetSQL()
+		query = q.SQL()
 	}
 
-	err := dao.db.QueryRow(ctx, query, q.GetArgs()...).Scan(q.GetResults()...)
+	err := dao.db.QueryRow(ctx, query, q.Args()...).Scan(q.Results()...)
 	if err == nil {
 		data.reset()
 	}
@@ -804,33 +809,33 @@ const (
 	sqlFullUpdateSeen = `UPDATE seen SET seen_at=$1`
 )
 
-type SeenTuple struct {
+type SeenRecord struct {
 	updateMask uint64
 	data       Seen
 }
 
-func (data Seen) NewTuple() *SeenTuple {
-	return &SeenTuple{data: data}
+func (data Seen) Record() *SeenRecord {
+	return &SeenRecord{data: data}
 }
 
-func (model *SeenTuple) GetUserID() int {
+func (model *SeenRecord) UserID() int {
 	return model.data.UserID
 }
 
-func (model *SeenTuple) GetSeenAt() time.Time {
+func (model *SeenRecord) SeenAt() time.Time {
 	return model.data.SeenAt
 }
 
-func (model *SeenTuple) SetUserID(x int) {
+func (model *SeenRecord) SetUserID(x int) {
 	model.data.UserID = x
 }
 
-func (model *SeenTuple) SetSeenAt(x time.Time) {
+func (model *SeenRecord) SetSeenAt(x time.Time) {
 	model.data.SeenAt = x
 	model.updateMask |= 1
 }
 
-func (*SeenTuple) Table() string {
+func (*SeenRecord) Table() string {
 	return "seen"
 }
 
@@ -842,33 +847,34 @@ func NewSeenDAO(db advpg.DB) SeenDAO {
 	return SeenDAO{db: db}
 }
 
-func (model *SeenTuple) querySelectByUserID(inUserID int) *advpg.SimpleQuery {
-	return &advpg.SimpleQuery{
-		SQL:     sqlSelectSeen + ` WHERE user_id=$1`,
-		Args:    []any{inUserID},
-		Results: []any{&model.data.UserID, &model.data.SeenAt},
-	}
+func (model *SeenRecord) querySelectByUserID(inUserID int) *advpg.SimpleQuery {
+	return advpg.NewSimpleQuery(
+		sqlSelectSeen+` WHERE user_id=$1`,
+		[]any{inUserID},
+		[]any{&model.data.UserID, &model.data.SeenAt},
+	)
 }
 
-func (model *SeenTuple) queryDeleteByUserID(inUserID int) *advpg.SimpleQuery {
-	return &advpg.SimpleQuery{
-		SQL:  `DELETE FROM seen WHERE user_id=$1`,
-		Args: []any{inUserID},
-	}
+func (model *SeenRecord) queryDeleteByUserID(inUserID int) *advpg.SimpleQuery {
+	return advpg.NewSimpleQuery(
+		`DELETE FROM seen WHERE user_id=$1`,
+		[]any{inUserID},
+		nil,
+	)
 }
 
-func (dao SeenDAO) SelectByUserID(ctx context.Context, inUserID int) (SeenTuple, error) {
-	var data SeenTuple
+func (dao SeenDAO) SelectByUserID(ctx context.Context, inUserID int) (SeenRecord, error) {
+	var data SeenRecord
 	q := data.querySelectByUserID(inUserID)
-	row := dao.db.QueryRow(ctx, q.GetSQL(), q.GetArgs()...)
-	err := row.Scan(q.GetResults()...)
+	row := dao.db.QueryRow(ctx, q.SQL(), q.Args()...)
+	err := row.Scan(q.Results()...)
 
 	return data, err
 }
 
 func (dao SeenDAO) DeleteByUserID(ctx context.Context, inUserID int) error {
-	q := (*SeenTuple)(nil).queryDeleteByUserID(inUserID)
-	ct, err := dao.db.Exec(ctx, q.GetSQL(), q.GetArgs()...)
+	q := (*SeenRecord)(nil).queryDeleteByUserID(inUserID)
+	ct, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
 	if err != nil {
 		return err
 	}
@@ -880,17 +886,17 @@ func (dao SeenDAO) DeleteByUserID(ctx context.Context, inUserID int) error {
 	return nil
 }
 
-func (model *SeenTuple) queryInsert() *advpg.SimpleQuery {
-	return &advpg.SimpleQuery{
-		SQL:     sqlInsertSeen,
-		Args:    []any{model.data.UserID},
-		Results: []any{&model.data.SeenAt},
-	}
+func (model *SeenRecord) queryInsert() *advpg.SimpleQuery {
+	return advpg.NewSimpleQuery(
+		sqlInsertSeen,
+		[]any{model.data.UserID},
+		[]any{&model.data.SeenAt},
+	)
 }
 
-func (dao SeenDAO) Insert(ctx context.Context, data *SeenTuple) error {
+func (dao SeenDAO) Insert(ctx context.Context, data *SeenRecord) error {
 	q := data.queryInsert()
-	err := dao.db.QueryRow(ctx, q.GetSQL(), q.GetArgs()...).Scan(q.GetResults()...)
+	err := dao.db.QueryRow(ctx, q.SQL(), q.Args()...).Scan(q.Results()...)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil
 	}
@@ -898,17 +904,17 @@ func (dao SeenDAO) Insert(ctx context.Context, data *SeenTuple) error {
 	return err
 }
 
-func (model *SeenTuple) queryFullUpdate() *advpg.SimpleQuery {
-	return &advpg.SimpleQuery{
-		SQL:     sqlFullUpdateSeen + " WHERE user_id=$2",
-		Args:    []any{model.data.SeenAt, model.data.UserID},
-		Results: []any{},
-	}
+func (model *SeenRecord) queryFullUpdate() *advpg.SimpleQuery {
+	return advpg.NewSimpleQuery(
+		sqlFullUpdateSeen+" WHERE user_id=$2",
+		[]any{model.data.SeenAt, model.data.UserID},
+		[]any{},
+	)
 }
 
-func (dao SeenDAO) FullUpdate(ctx context.Context, data *SeenTuple) error {
+func (dao SeenDAO) FullUpdate(ctx context.Context, data *SeenRecord) error {
 	q := data.queryFullUpdate()
-	ct, err := dao.db.Exec(ctx, q.GetSQL(), q.GetArgs()...)
+	ct, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
 	if err != nil {
 		return err
 	}
@@ -920,14 +926,14 @@ func (dao SeenDAO) FullUpdate(ctx context.Context, data *SeenTuple) error {
 	return nil
 }
 
-func (model *SeenTuple) queryUpdate() *advpg.QueryBuilder {
+func (model *SeenRecord) queryUpdate() *advpg.QueryBuilder {
 	if model.updateMask == 0 {
 		return &advpg.QueryBuilder{}
 	}
 
 	q := advpg.NewQueryBuilder(`UPDATE seen SET`)
 	if model.updateMask&1 != 0 {
-		if len(q.Args) != 0 {
+		if len(q.Args()) != 0 {
 			q.AppendSQL(",")
 		}
 
@@ -942,18 +948,18 @@ func (model *SeenTuple) queryUpdate() *advpg.QueryBuilder {
 	return q
 }
 
-func (model *SeenTuple) reset() {
+func (model *SeenRecord) reset() {
 	model.updateMask = 0
 }
 
-func (dao SeenDAO) Update(ctx context.Context, data *SeenTuple) error {
+func (dao SeenDAO) Update(ctx context.Context, data *SeenRecord) error {
 	q := data.queryUpdate()
-	query := q.GetSQL()
+	query := q.SQL()
 	if query == "" {
 		return nil
 	}
 
-	ct, err := dao.db.Exec(ctx, query, q.GetArgs()...)
+	ct, err := dao.db.Exec(ctx, query, q.Args()...)
 	if err == nil && ct.RowsAffected() == 0 {
 		err = sql.ErrNoRows
 	}

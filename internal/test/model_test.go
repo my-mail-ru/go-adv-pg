@@ -8,11 +8,11 @@ import (
 )
 
 func TestUserUpdate(t *testing.T) {
-	m := UserTuple{}
+	m := User{}.Record()
 	m.SetName("test")
 
 	q := m.queryUpdate()
-	sql := q.GetSQL()
+	sql := q.SQL()
 
 	if !strings.Contains(sql, "name=$") {
 		t.Error("missing field name:", q)

@@ -135,7 +135,7 @@ const (
 )
 
 {{- if not $model.DisableActiveRecord }}
-	type {{$model.TupleType}} struct {
+	type {{$model.RecordType}} struct {
 		{{- if $model.UpdateValueColumns }}
 			updateMask uint64
 		{{- end }}
@@ -145,17 +145,17 @@ const (
 		{{ end -}}
 	}
 
-	func (data {{$model.GoName}}) NewTuple() *{{$model.TupleType}} {
-		return &{{$model.TupleType}}{data: data}
+	func (data {{$model.GoName}}) Record() *{{$model.RecordType}} {
+		return &{{$model.RecordType}}{data: data}
 	}
 	{{ range $col := $model.Columns }}
-		func (model *{{$model.TupleType}}) Get{{to_upper_camel $col.GoName}}() {{$col.GoType}} {
+		func (model *{{$model.RecordType}}) {{to_upper_camel $col.GoName}}() {{$col.GoType}} {
 			return {{$col.GoExpr}}
 		}
 	{{ end }}
 
 	{{- range $i, $col := $model.IterateSetterColumns }}
-		func (model *{{$model.TupleType}}) Set{{to_upper_camel $col.GoName}}(x {{$col.GoType}}) {
+		func (model *{{$model.RecordType}}) Set{{to_upper_camel $col.GoName}}(x {{$col.GoType}}) {
 			{{$col.GoExpr}} = x
 			{{ if ge $i 0 -}}
 				model.updateMask |= {{shl $i}}
@@ -164,21 +164,21 @@ const (
 	{{ end }}
 
 	{{- range $col := $model.MutatorColumns }}
-		func (model *{{$model.TupleType}}) Inc{{to_upper_camel $col.GoName}}() {
+		func (model *{{$model.RecordType}}) Inc{{to_upper_camel $col.GoName}}() {
 			model.mut{{to_upper_camel $col.GoName}}++
 		}
 
-		func (model *{{$model.TupleType}}) Dec{{to_upper_camel $col.GoName}}() {
+		func (model *{{$model.RecordType}}) Dec{{to_upper_camel $col.GoName}}() {
 			model.mut{{to_upper_camel $col.GoName}}--
 		}
 
-		func (model *{{$model.TupleType}}) Add{{to_upper_camel $col.GoName}}(x {{$col.GoType}}) {
+		func (model *{{$model.RecordType}}) Add{{to_upper_camel $col.GoName}}(x {{$col.GoType}}) {
 			model.mut{{to_upper_camel $col.GoName}} += x
 		}
 	{{ end }}
 {{ end }}
 
-func (*{{$model.TupleType}}) Table() string {
+func (*{{$model.RecordType}}) Table() string {
 	return {{quote $model.Table.Table}}
 }
 
@@ -202,7 +202,7 @@ func (*{{$model.TupleType}}) Table() string {
 		}
 
 		{{- range $method := $model.IterateQueryMethods $idx }}
-			func (model *{{$model.TupleType}}) {{$method.Name}}(keys []{{$idx.KeyStructName}}) *{{$.AdvPgPkg}}.QueryBuilder {
+			func (model *{{$model.RecordType}}) {{$method.Name}}(keys []{{$idx.KeyStructName}}) *{{$.AdvPgPkg}}.QueryBuilder {
 				if len(keys) == 0 {
 					return &{{$.AdvPgPkg}}.QueryBuilder{}
 
@@ -234,7 +234,7 @@ func (*{{$model.TupleType}}) Table() string {
 					{{- if $method.NeedResults }}{{ template "order_by" $model.IterateIndexOrder $idx }}{{ end -}}
 				`)
 				{{ if $method.NeedResults -}}
-				q.Results = {{ template "results" $model.Columns }}
+				q.SetResults({{ template "results" $model.Columns }})
 				{{- end }}
 
 				return q
@@ -243,21 +243,21 @@ func (*{{$model.TupleType}}) Table() string {
 		{{ end -}}
 
 		{{- if $idx.Selector -}}
-			func (dao {{$model.DAO}}) {{$idx.Selector}}(ctx context.Context, keys []{{$idx.KeyStructName}}) ([]{{$model.TupleType}}, error) {
-				var data {{$model.TupleType}}
+			func (dao {{$model.DAO}}) {{$idx.Selector}}(ctx context.Context, keys []{{$idx.KeyStructName}}) ([]{{$model.RecordType}}, error) {
+				var data {{$model.RecordType}}
 				q := data.query{{$idx.Selector}}(keys)
 
-				rows, err := dao.db.Query(ctx, q.GetSQL(), q.GetArgs()...)
+				rows, err := dao.db.Query(ctx, q.SQL(), q.Args()...)
 				if err != nil {
 					return nil, err
 				}
 
 				defer rows.Close()
 
-				ret := ([]{{$model.TupleType}})(nil){{/* TODO pre-allocation based on an average row count for this type */}}
+				ret := ([]{{$model.RecordType}})(nil){{/* TODO pre-allocation based on an average row count for this type */}}
 
 				for rows.Next() {
-					if err = rows.Scan(q.GetResults()...); err != nil {
+					if err = rows.Scan(q.Results()...); err != nil {
 						return nil, err
 					}
 
@@ -275,34 +275,36 @@ func (*{{$model.TupleType}}) Table() string {
 
 		{{- if $idx.Deleter -}}
 			func (dao {{$model.DAO}}) {{$idx.Deleter}}(ctx context.Context, keys []{{$idx.KeyStructName}}) error {
-				q := (*{{$model.TupleType}})(nil).query{{$idx.Deleter}}(keys){{/* TODO oh shi... refactor deleter queries */}}
-				_, err := dao.db.Exec(ctx, q.GetSQL(), q.GetArgs()...)
+				q := (*{{$model.RecordType}})(nil).query{{$idx.Deleter}}(keys){{/* TODO oh shi... refactor deleter queries */}}
+				_, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
 				return err
 			}
 
 		{{ end -}}
 	{{ else }}{{/* single keyset of multiple keys, or single multi key */}}
 		{{- range $method := $model.IterateQueryMethods $idx }}
-			func (model *{{$model.TupleType}}) {{$method.Name }}(
+			func (model *{{$model.RecordType}}) {{$method.Name }}(
 					{{- template "query_method_args" $model.IterateIndexKeys $idx -}}
 				) *{{$.AdvPgPkg}}.SimpleQuery {
-				return &{{$.AdvPgPkg}}.SimpleQuery{
-					SQL: {{$method.Query}} WHERE
+				return {{$.AdvPgPkg}}.NewSimpleQuery(
+					{{$method.Query}} WHERE
 						{{- range $i, $col := $model.IterateIndexKeys $idx }} {{ if $i }}AND {{ end -}}
 							{{ template "sql_result" $col }}={{ if $col.IsMulti }}IN({{ end }}${{inc $i}}{{ if $col.IsMulti }}){{ end }}
 						{{- end -}}
 						{{- if $idx.Condition }} AND {{$idx.Condition}}{{ end -}}
 						{{- if $method.NeedResults }}{{ template "order_by" $model.IterateIndexOrder $idx }}{{ end }}`,
-					Args: []any{
+					[]any{
 								{{- range $i, $col := $model.IterateIndexKeys $idx -}}
 									{{ if $i }}, {{ end -}}
 									in{{plural $col.IsMulti $col.GoName}}
 								{{- end -}}
 							},
 					{{- if $method.NeedResults }}
-					Results: {{ template "results" $model.Columns }},
+						{{ template "results" $model.Columns }},
+					{{- else }}
+						nil,
 					{{- end }}
-				}
+				)
 			}
 
 		{{ end -}}
@@ -310,27 +312,27 @@ func (*{{$model.TupleType}}) Table() string {
 		{{- if $idx.Selector -}}
 			func (dao {{$model.DAO}}) {{$idx.Selector}}(ctx context.Context, {{ template "query_method_args" $model.IterateIndexKeys $idx }}) (
 				{{- if not $idx.IsUniq -}} [] {{- end -}}
-			{{$model.TupleType}}, error) {
-				var data {{$model.TupleType}}
+			{{$model.RecordType}}, error) {
+				var data {{$model.RecordType}}
 				q := data.query{{$idx.Selector}}({{ template "query_method_keys" $model.IterateIndexKeys $idx }})
 				{{- if $idx.IsUniq }}
-					row := dao.db.QueryRow(ctx, q.GetSQL(), q.GetArgs()...)
-					err := row.Scan(q.GetResults()...)
+					row := dao.db.QueryRow(ctx, q.SQL(), q.Args()...)
+					err := row.Scan(q.Results()...)
 
 					return data, err
 				{{- else }}
 
-					rows, err := dao.db.Query(ctx, q.GetSQL(), q.GetArgs()...)
+					rows, err := dao.db.Query(ctx, q.SQL(), q.Args()...)
 					if err != nil {
 						return nil, err
 					}
 
 					defer rows.Close()
 
-					ret := ([]{{$model.TupleType}})(nil){{/* TODO pre-allocation based on an average row count for this type */}}
+					ret := ([]{{$model.RecordType}})(nil){{/* TODO pre-allocation based on an average row count for this type */}}
 
 					for rows.Next() {
-						if err = rows.Scan(q.GetResults()...); err != nil {
+						if err = rows.Scan(q.Results()...); err != nil {
 							return nil, err
 						}
 
@@ -349,9 +351,9 @@ func (*{{$model.TupleType}}) Table() string {
 
 		{{- if $idx.Deleter -}}
 			func (dao {{$model.DAO}}) {{$idx.Deleter}}(ctx context.Context, {{ template "query_method_args" $model.IterateIndexKeys $idx }}) error {
-				q := (*{{$model.TupleType}})(nil).query{{$idx.Deleter}}({{ template "query_method_keys" $model.IterateIndexKeys $idx }}){{/* TODO oh shi... refactor deleter queries */}}
+				q := (*{{$model.RecordType}})(nil).query{{$idx.Deleter}}({{ template "query_method_keys" $model.IterateIndexKeys $idx }}){{/* TODO oh shi... refactor deleter queries */}}
 				{{ if and $idx.IsUniq (not $idx.IsMulti) -}}
-					ct, err := dao.db.Exec(ctx, q.GetSQL(), q.GetArgs()...)
+					ct, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
 					if err != nil {
 						return err
 					}
@@ -362,7 +364,7 @@ func (*{{$model.TupleType}}) Table() string {
 
 					return nil
 				{{- else -}}
-					_, err := dao.db.Exec(ctx, q.GetSQL(), q.GetArgs()...)
+					_, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
 					return err
 				{{- end }}
 			}
@@ -371,38 +373,38 @@ func (*{{$model.TupleType}}) Table() string {
 	{{- end -}}
 {{ end }}
 
-func (model *{{$model.TupleType}}) queryInsert() *{{$.AdvPgPkg}}.SimpleQuery {
-	return &{{$.AdvPgPkg}}.SimpleQuery{
-		SQL: sqlInsert{{$model.GoName}},
-		Args: {{ template "insert_args" $model }},
-		Results: {{ template "results" $model.InsertResultColumns }},
-	}
+func (model *{{$model.RecordType}}) queryInsert() *{{$.AdvPgPkg}}.SimpleQuery {
+	return {{$.AdvPgPkg}}.NewSimpleQuery(
+		sqlInsert{{$model.GoName}},
+		{{ template "insert_args" $model }},
+		{{ template "results" $model.InsertResultColumns }},
+	)
 }
 
-func (dao {{$model.DAO}}) Insert(ctx context.Context, data *{{$model.TupleType}}) error {
+func (dao {{$model.DAO}}) Insert(ctx context.Context, data *{{$model.RecordType}}) error {
 	q := data.queryInsert()
 	{{ if $model.InsertResultColumns -}}
-		err :=dao.db.QueryRow(ctx, q.GetSQL(), q.GetArgs()...).Scan(q.GetResults()...)
+		err :=dao.db.QueryRow(ctx, q.SQL(), q.Args()...).Scan(q.Results()...)
 		{{ if $model.OnConflictDoNothing -}}
 			if errors.Is(err, sql.ErrNoRows) {
 				return nil
 			}
 		{{ end -}}
 	{{- else -}}
-		_, err := dao.db.Exec(ctx, q.GetSQL(), q.GetArgs()...)
+		_, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
 	{{- end }}
 	return err
 }
 
 {{ if $model.UpdateValueColumns -}}
-	func (model *{{$model.TupleType}}) queryFullUpdate() *{{$.AdvPgPkg}}.SimpleQuery {
-		return &{{$.AdvPgPkg}}.SimpleQuery{
-			SQL: sqlFullUpdate{{$model.GoName}} + " WHERE
-				{{- range $i, $col := $model.PrimaryKeyColumns }} {{ if $i }}AND {{ end -}}
-					{{ template "sql_result" $col }}=${{len $model.UpdateValueColumns | inc | add $i | add (len $model.MutatorColumns)}}
-				{{- end -}}"
-				{{- if $model.UpdateResultColumns }} + sqlUpdateReturning{{$model.GoName}}{{end -}},
-			Args: []any{
+	func (model *{{$model.RecordType}}) queryFullUpdate() *{{$.AdvPgPkg}}.SimpleQuery {
+		return {{$.AdvPgPkg}}.NewSimpleQuery(
+			sqlFullUpdate{{$model.GoName}} + " WHERE
+			{{- range $i, $col := $model.PrimaryKeyColumns }} {{ if $i }}AND {{ end -}}
+				{{ template "sql_result" $col }}=${{len $model.UpdateValueColumns | inc | add $i | add (len $model.MutatorColumns)}}
+			{{- end -}}"
+			{{- if $model.UpdateResultColumns }} + sqlUpdateReturning{{$model.GoName}}{{end -}},
+			[]any{
 				{{- range $i, $col := $model.UpdateValueColumns -}}
 					{{ if $i }}, {{ end -}}
 					{{$col.GoExpr}}
@@ -415,16 +417,16 @@ func (dao {{$model.DAO}}) Insert(ctx context.Context, data *{{$model.TupleType}}
 					, {{$col.GoExpr}}
 				{{- end -}}
 			},
-			Results: {{ template "results" $model.UpdateResultColumns }},
-		}
+			{{ template "results" $model.UpdateResultColumns }},
+		)
 	}
 
-	func (dao {{$model.DAO}}) FullUpdate(ctx context.Context, data *{{$model.TupleType}}) error {
+	func (dao {{$model.DAO}}) FullUpdate(ctx context.Context, data *{{$model.RecordType}}) error {
 		q := data.queryFullUpdate()
 		{{ if $model.UpdateResultColumns -}}
-			return dao.db.QueryRow(ctx, q.GetSQL(), q.GetArgs()...).Scan(q.GetResults()...)
+			return dao.db.QueryRow(ctx, q.SQL(), q.Args()...).Scan(q.Results()...)
 		{{- else -}}
-			ct, err := dao.db.Exec(ctx, q.GetSQL(), q.GetArgs()...)
+			ct, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
 			if err != nil {
 				return err
 			}
@@ -439,7 +441,7 @@ func (dao {{$model.DAO}}) Insert(ctx context.Context, data *{{$model.TupleType}}
 {{ end -}}
 
 {{- if and (not $model.DisableActiveRecord) (or $model.UpdateValueColumns $model.MutatorColumns) }}
-	func (model *{{$model.TupleType}}) queryUpdate() *{{$.AdvPgPkg}}.QueryBuilder {
+	func (model *{{$model.RecordType}}) queryUpdate() *{{$.AdvPgPkg}}.QueryBuilder {
 		if  {{ if $model.UpdateValueColumns -}} model.updateMask == 0 {{- end -}}
 			{{- range $i, $col := $model.MutatorColumns -}}
 				{{- if or $i $model.UpdateValueColumns }} && {{ end -}}
@@ -452,7 +454,7 @@ func (dao {{$model.DAO}}) Insert(ctx context.Context, data *{{$model.TupleType}}
 		q := {{$.AdvPgPkg}}.NewQueryBuilder(`UPDATE {{$model.Table.Table}} SET`)
 		{{ range $i, $col := $model.UpdateValueColumns -}}
 			if model.updateMask&{{shl $i}} != 0 {
-				if len(q.Args) != 0 {
+				if len(q.Args()) != 0 {
 					q.AppendSQL(",")
 				}
 
@@ -464,7 +466,7 @@ func (dao {{$model.DAO}}) Insert(ctx context.Context, data *{{$model.TupleType}}
 
 		{{- range $i, $col := $model.MutatorColumns -}}
 			if model.mut{{to_upper_camel $col.GoName}} != 0 {
-				if len(q.Args) != 0 {
+				if len(q.Args()) != 0 {
 					q.AppendSQL(",")
 				}
 
@@ -482,29 +484,29 @@ func (dao {{$model.DAO}}) Insert(ctx context.Context, data *{{$model.TupleType}}
 
 		{{- if $model.UpdateResultColumns }}
 			q.AppendSQL(sqlUpdateReturning{{$model.GoName}})
-			q.Results = {{ template "results" $model.UpdateResultColumns }}
+			q.SetResults({{ template "results" $model.UpdateResultColumns }})
 		{{- end }}
 
 		return q
 	}
 
 	{{ if $model.MutatorColumns -}}
-		func (model *{{$model.TupleType}}) querySelectMutators() *{{$.AdvPgPkg}}.SimpleQuery {
-			return &{{$.AdvPgPkg}}.SimpleQuery {
-				SQL: sqlSelectMutators{{$model.GoName}},
-				Args: []any{
+		func (model *{{$model.RecordType}}) querySelectMutators() *{{$.AdvPgPkg}}.SimpleQuery {
+			return {{$.AdvPgPkg}}.NewSimpleQuery(
+				sqlSelectMutators{{$model.GoName}},
+				[]any{
 					{{- range $i, $col := $model.PrimaryKeyColumns -}}
 						{{ if $i }}, {{ end -}}
 						model.data.{{$col.GoName}}
 					{{- end -}}
 				},
-				Results: {{ template "results" $model.MutatorColumns }},
-			}
+				{{ template "results" $model.MutatorColumns }},
+			)
 		}
 
 	{{ end -}}
 
-	func (model *{{$model.TupleType}}) reset() {
+	func (model *{{$model.RecordType}}) reset() {
 		{{ if $model.UpdateValueColumns -}}
 			model.updateMask = 0
 		{{ end -}}
@@ -513,27 +515,27 @@ func (dao {{$model.DAO}}) Insert(ctx context.Context, data *{{$model.TupleType}}
 		{{ end -}}
 	}
 
-	func (dao {{$model.DAO}}) Update(ctx context.Context, data *{{$model.TupleType}}) error {
+	func (dao {{$model.DAO}}) Update(ctx context.Context, data *{{$model.RecordType}}) error {
 		q := 
 		{{- if $model.MutatorColumns -}}
 			{{$.AdvPgPkg}}.Query(data.queryUpdate())
 		{{- else -}}
 			data.queryUpdate()
 		{{- end }}
-		query := q.GetSQL()
+		query := q.SQL()
 		if query == "" {
 			{{ if $model.MutatorColumns -}}
 				q = data.querySelectMutators()
-				query = q.GetSQL()
+				query = q.SQL()
 			{{- else -}}
 				return nil
 			{{- end }}
 		}
 
 		{{ if $model.UpdateResultColumns -}}
-			err := dao.db.QueryRow(ctx, query, q.GetArgs()...).Scan(q.GetResults()...)
+			err := dao.db.QueryRow(ctx, query, q.Args()...).Scan(q.Results()...)
 		{{- else -}}
-			ct, err := dao.db.Exec(ctx, query, q.GetArgs()...)
+			ct, err := dao.db.Exec(ctx, query, q.Args()...)
 			if err == nil && ct.RowsAffected() == 0 {
 				err = sql.ErrNoRows
 			}

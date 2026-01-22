@@ -22,7 +22,6 @@ import (
 )
 
 const (
-	AdvPgDirective      = "//adv:pg:"
 	advPgImport         = `"github.com/my-mail-ru/go-adv-pg"`
 	advPgDefaultPkgName = "advpg"
 	testSuffix          = "_test"

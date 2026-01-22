@@ -1,6 +1,6 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/my-mail-ru/go-adv-pg.svg)](https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg)
 
-# adv-pg: the code-first SQL query generator with ActiveRecord support.
+# adv-pg: the code-first SQL query generator with ActiveRecord support
 
 ## Features
 
@@ -49,7 +49,7 @@ func main() {
     views := UserViews{
         UserID: userID,
         Views:  initialViews,
-    }.NewTuple()
+    }.Record()
 
     err := dao.Insert(ctx, views)
     // ...

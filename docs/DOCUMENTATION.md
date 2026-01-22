@@ -63,24 +63,26 @@ For every source file having the //go:generate directive as specified above, the
 Every [Table](<#Table>) describing the model $\{Model\} declared in the source file causes the generation of the following entities:
 
 - Query constants \(sqlSelect..., sqlInsert... and so on\) containing SQL query parts,
-- The Tuple type named $\{Model\}Tuple, if the [ActiveRecord](<https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-ActiveRecord>) isn't disabled,
-- Accessor methods: Getters for every column, and Setters for every updatable column, and Mutators, if the [ActiveRecord](<https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-ActiveRecord>) isn't disabled. The receiver type for these methods is the Tuple type,
-- Query methods \(querySelect..., queryInsert and so on\) that return the type implementing the [Query](<#Query>) interface. The receiver type for these methods is the Tuple type \(or the $\{Model\} itself if the [ActiveRecord](<https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-ActiveRecord>) is disabled\),
+- The Record type named $\{Model\}Record, if the [ActiveRecord](<https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-ActiveRecord>) isn't disabled,
+- Accessor methods: Getters for every column, and Setters for every updatable column, and Mutators, if the [ActiveRecord](<https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-ActiveRecord>) isn't disabled. The receiver type for these methods is the Record type,
+- Query methods \(querySelect..., queryInsert and so on\) that return the type implementing the [Query](<#Query>) interface. The receiver type for these methods is the Record type \(or the $\{Model\} itself if the [ActiveRecord](<https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-ActiveRecord>) is disabled\),
 - The DAO type, if it isn't specified explicitly by a developer \(concerns both the default and explicitly declared DAOs\),
-- Database access methods \([Select](<https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-Select>), [Insert](<https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-Insert>), [Update](<https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-Update>), [Delete](<https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-Delete>)\) that accept keys or Tuple values \(or the $\{Model\} if the [ActiveRecord](<https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-ActiveRecord>) is disabled\). The receiver type for these methods is the DAO type. The first argument of all these methods is always the [context.Context](<https://pkg.go.dev/context/#Context>).
+- Database access methods \([Select](<https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-Select>), [Insert](<https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-Insert>), [Update](<https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-Update>), [Delete](<https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-Delete>)\) that accept keys or Record values \(or the $\{Model\} if the [ActiveRecord](<https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-ActiveRecord>) is disabled\). The receiver type for these methods is the DAO type. The first argument of all these methods is always the [context.Context](<https://pkg.go.dev/context/#Context>).
 
-The Tuple type, accessors, the DAO type, and database access methods are exported, other entities are not. Exported entities represent a public API of the model, and non\-exported ones can be used to extend this public API with custom database access methods \(like cross\-table joins\).
+The Record type, accessors, the DAO type, and database access methods are exported, other entities are not. Exported entities represent a public API of the model, and non\-exported ones can be used to extend this public API with custom database access methods \(like cross\-table joins\).
 
 ### ActiveRecord
 
 In a broader sense, the active record pattern is a software architectural pattern that maps an object instance in memory to a database table record. This project treats ActiveRecord as:
 
 - High\-level database access for a defined user type. The developer declares tables, indices, and properties of some fields, then the queries and database access methods are generated automatically,
-- Direct access to the object fields is restricted \(i.e. is possible only from inside the model package\), and generated Getters and Setters have to be used for it,
+- Direct access to the object fields is restricted \(i.e. is possible only from inside the model package\), and generated Getter and Setter methods of a Record type have to be used for it,
 - The Update database access method updates only the fields that were changed since the previous Select, Insert or Update operation. If no fields were changed, the Update operation is omitted,
 - Mutators can be used to implement concurrency\-safe counters in a table.
 
-When the ActiveRecord is disabled \(DisableActiveRecord in a [Table](<#Table>) definition\), no Update or accessor methods are generated, but you can access the object fields directly \(no additional Tuple type is generated\).
+When the ActiveRecord is disabled \(DisableActiveRecord in a [Table](<#Table>) definition\), no Update or accessor methods are generated, but you can access the object fields directly \(no additional Record type is generated\).
+
+To simplify a record initialization, the Record\(\) method of the Model is generated.
 
 ### Select
 
@@ -94,13 +96,13 @@ In complex table schemas with many multi\-key indices, default Selector names ma
 
 IsMulti, IsUniq, and also the count of the index keys determine the possible combinations of arguments and returned values:
 
-- IsMulti: false, IsUniq: true: the Select method accepts index key fields as separate arguments. Exactly one record is returned by value of the Tuple type \(or the $\{Model\} type itself when the [ActiveRecord](<https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-ActiveRecord>) is disabled\). The \[sql.ErrNoRows\] error is returned if no record corresponding to the Select method arguments is found.
+- IsMulti: false, IsUniq: true: the Select method accepts index key fields as separate arguments. Exactly one record is returned by value of the Record type \(or the $\{Model\} type itself when the [ActiveRecord](<https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-ActiveRecord>) is disabled\). The \[sql.ErrNoRows\] error is returned if no record corresponding to the Select method arguments is found.
 
-- IsMulti: false, IsUniq: false: the Select method accepts index key fields as separate arguments. A slice of \[\]Tuple \(or \[\]$\{Model\) type is returned. Empty \`SELECT\` responses aren't considered as errors and simply return an empty slice.
+- IsMulti: false, IsUniq: false: the Select method accepts index key fields as separate arguments. A slice of \[\]Record \(or \[\]$\{Model\) type is returned. Empty \`SELECT\` responses aren't considered as errors and simply return an empty slice.
 
-- IsMulti: true, a single\-key index: the Select method accepts a key slice. A slice of \[\]Tuple \(or \[\]$\{Model\) type is returned. Empty \`SELECT\` responses aren't considered as errors and simply return an empty slice.
+- IsMulti: true, a single\-key index: the Select method accepts a key slice. A slice of \[\]Record \(or \[\]$\{Model\) type is returned. Empty \`SELECT\` responses aren't considered as errors and simply return an empty slice.
 
-- IsMulti: true, a multi\-key index: the Select method accepts a slice of the generated type, which name is the Select method name with "Key" appended. A slice of \[\]Tuple \(or \[\]$\{Model\) type is returned. Empty \`SELECT\` responses aren't considered as errors and simply return an empty slice.
+- IsMulti: true, a multi\-key index: the Select method accepts a slice of the generated type, which name is the Select method name with "Key" appended. A slice of \[\]Record \(or \[\]$\{Model\) type is returned. Empty \`SELECT\` responses aren't considered as errors and simply return an empty slice.
 
 Examples:
 
@@ -145,7 +147,7 @@ The only difference between Select and Delete method configuration is the names 
 
 ### Insert
 
-The Insert DAO method takes two arguments: the [context.Context](<https://pkg.go.dev/context/#Context>), and a pointer to the Tuple \(or to $\{Model\} directly if [ActiveRecord](<https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-ActiveRecord>) is disabled for a table\).
+The Insert DAO method takes two arguments: the [context.Context](<https://pkg.go.dev/context/#Context>), and a pointer to the Record \(or to $\{Model\} directly if [ActiveRecord](<https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-ActiveRecord>) is disabled for a table\).
 
 - All the fields except for those having DisableInsert and InitByStorage set to true are INSERTed into a table,
 
@@ -157,7 +159,7 @@ The Insert DAO method takes two arguments: the [context.Context](<https://pkg.go
 
 - If the UpdateOnConflict is set to true for the [Table](<#Table>), an attempt to insert a record with an already existing primary key value will be converted to UPDATE, which will SET all the non\-primary key fields to the actual values,
 
-- If the UpdateOnConflict is set to true for the [Table](<#Table>), and there are fields with mutators enabled \(EnableMutators: true in the [Field](<#Field>) definition\), mutators are updated as usual \(using an incremental counter rather than setting the value directly\), and the actual value is returned from the table back to the Tuple/Model value,
+- If the UpdateOnConflict is set to true for the [Table](<#Table>), and there are fields with mutators enabled \(EnableMutators: true in the [Field](<#Field>) definition\), mutators are updated as usual \(using an incremental counter rather than setting the value directly\), and the actual value is returned from the table back to the Record/Model value,
   
   UpdateOnConflict may not be used with tables with InitByStorage primary keys.
 
@@ -168,7 +170,7 @@ The Insert DAO method takes two arguments: the [context.Context](<https://pkg.go
 The update operation is represented by two methods:
 
 - FullUpdate. Requires that some [Index](<#Index>) of a [Table](<#Table>) be declared as a primary key. If no primary key is declared for a table, this method isn't generated. Does not require [ActiveRecord](<https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-ActiveRecord>) \(i.e. is generated for every table that has a primary key declaration\). This method updates all settable \(see below\) fields of a table. The mutator fields are always updated too, regardless of whether the mutator counter is non\-zero.
-- Update \(aka "smart" Update\). Like FullUpdate, it requires a primary key to be declared. Requires [ActiveRecord](<https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-ActiveRecord>) \(i.e. DisableActiveRecord set to false for a [Table](<#Table>)\). The Tuple type's Setter methods and mutator \(Inc/Dec/Add\) methods track data changes. Only the changed fields \(i.e. on which the Set method is called, or which mutator counter is non\-zero\) are mentioned in the SET clause of the UPDATE query. If a record has no changed fields and there are no mutator fields defined, the UPDATE query isn't issued at all. When there are some mutator fields defined, but no fields are changed \(i.e. no Set methods are called after the previous operation, and all mutator counters are zero\), the SELECT operation is issued instead of the UPDATE to retrieve the current mutator values from a database. Thus, all mutator fields are guaranteed to hold actual values when the Update method returns.
+- Update \(aka "smart" Update\). Like FullUpdate, it requires a primary key to be declared. Requires [ActiveRecord](<https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-ActiveRecord>) \(i.e. DisableActiveRecord set to false for a [Table](<#Table>)\). The Record type's Setter methods and mutator \(Inc/Dec/Add\) methods track data changes. Only the changed fields \(i.e. on which the Set method is called, or which mutator counter is non\-zero\) are mentioned in the SET clause of the UPDATE query. If a record has no changed fields and there are no mutator fields defined, the UPDATE query isn't issued at all. When there are some mutator fields defined, but no fields are changed \(i.e. no Set methods are called after the previous operation, and all mutator counters are zero\), the SELECT operation is issued instead of the UPDATE to retrieve the current mutator values from a database. Thus, all mutator fields are guaranteed to hold actual values when the Update method returns.
 
 The following [Field](<#Field>) properties control the [Update](<https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-Update>) method behavior:
 
@@ -183,9 +185,9 @@ Mutators \(EnableMutators: true in the [Field](<#Field>) definition\) are additi
 
 Mutator methods are:
 
-- IncFieldName \- increments the mutator counter inside the Tuple struct by 1,
-- DecFieldName \- decrements the mutator counter inside the Tuple struct by 1,
-- AddFieldName\(x int\) \- adds x \(possibly negative\) to the mutator counter inside the Tuple struct.
+- IncFieldName \- increments the mutator counter inside the Record struct by 1,
+- DecFieldName \- decrements the mutator counter inside the Record struct by 1,
+- AddFieldName\(x int\) \- adds x \(possibly negative\) to the mutator counter inside the Record struct.
 
 ## Index
 
@@ -205,13 +207,15 @@ Mutator methods are:
   - [func \(qb \*QueryBuilder\) AppendPlaceholderNum\(\)](<#QueryBuilder.AppendPlaceholderNum>)
   - [func \(qb \*QueryBuilder\) AppendResults\(res any\)](<#QueryBuilder.AppendResults>)
   - [func \(qb \*QueryBuilder\) AppendSQL\(sql string\)](<#QueryBuilder.AppendSQL>)
-  - [func \(qb \*QueryBuilder\) GetArgs\(\) \[\]any](<#QueryBuilder.GetArgs>)
-  - [func \(qb \*QueryBuilder\) GetResults\(\) \[\]any](<#QueryBuilder.GetResults>)
-  - [func \(qb \*QueryBuilder\) GetSQL\(\) string](<#QueryBuilder.GetSQL>)
+  - [func \(qb \*QueryBuilder\) Args\(\) \[\]any](<#QueryBuilder.Args>)
+  - [func \(qb \*QueryBuilder\) Results\(\) \[\]any](<#QueryBuilder.Results>)
+  - [func \(qb \*QueryBuilder\) SQL\(\) string](<#QueryBuilder.SQL>)
+  - [func \(qb \*QueryBuilder\) SetResults\(res \[\]any\)](<#QueryBuilder.SetResults>)
 - [type SimpleQuery](<#SimpleQuery>)
-  - [func \(q \*SimpleQuery\) GetArgs\(\) \[\]any](<#SimpleQuery.GetArgs>)
-  - [func \(q \*SimpleQuery\) GetResults\(\) \[\]any](<#SimpleQuery.GetResults>)
-  - [func \(q \*SimpleQuery\) GetSQL\(\) string](<#SimpleQuery.GetSQL>)
+  - [func NewSimpleQuery\(sql string, args, results \[\]any\) \*SimpleQuery](<#NewSimpleQuery>)
+  - [func \(q \*SimpleQuery\) Args\(\) \[\]any](<#SimpleQuery.Args>)
+  - [func \(q \*SimpleQuery\) Results\(\) \[\]any](<#SimpleQuery.Results>)
+  - [func \(q \*SimpleQuery\) SQL\(\) string](<#SimpleQuery.SQL>)
 - [type StringWriter](<#StringWriter>)
 - [type Table](<#Table>)
   - [func \(t \*Table\) Validate\(\) error](<#Table.Validate>)
@@ -426,9 +430,9 @@ const (
 
 ```go
 type Query interface {
-    GetSQL() string
-    GetArgs() []any
-    GetResults() []any
+    SQL() string
+    Args() []any
+    Results() []any
 }
 ```
 
@@ -439,9 +443,7 @@ QueryBuilder is a dynamic query builder. Implements the [Query](<#Query>) interf
 
 ```go
 type QueryBuilder struct {
-    SQL     StringWriter
-    Args    []any
-    Results []any
+    // contains filtered or unexported fields
 }
 ```
 
@@ -499,29 +501,38 @@ func (qb *QueryBuilder) AppendSQL(sql string)
 
 
 
-<a name="QueryBuilder.GetArgs"></a>
-### func \(\*QueryBuilder\) GetArgs
+<a name="QueryBuilder.Args"></a>
+### func \(\*QueryBuilder\) Args
 
 ```go
-func (qb *QueryBuilder) GetArgs() []any
+func (qb *QueryBuilder) Args() []any
 ```
 
 
 
-<a name="QueryBuilder.GetResults"></a>
-### func \(\*QueryBuilder\) GetResults
+<a name="QueryBuilder.Results"></a>
+### func \(\*QueryBuilder\) Results
 
 ```go
-func (qb *QueryBuilder) GetResults() []any
+func (qb *QueryBuilder) Results() []any
 ```
 
 
 
-<a name="QueryBuilder.GetSQL"></a>
-### func \(\*QueryBuilder\) GetSQL
+<a name="QueryBuilder.SQL"></a>
+### func \(\*QueryBuilder\) SQL
 
 ```go
-func (qb *QueryBuilder) GetSQL() string
+func (qb *QueryBuilder) SQL() string
+```
+
+
+
+<a name="QueryBuilder.SetResults"></a>
+### func \(\*QueryBuilder\) SetResults
+
+```go
+func (qb *QueryBuilder) SetResults(res []any)
 ```
 
 
@@ -533,35 +544,42 @@ SimpleQuery is a "static" query that isn't indended for modification. Implements
 
 ```go
 type SimpleQuery struct {
-    SQL     string
-    Args    []any
-    Results []any
+    // contains filtered or unexported fields
 }
 ```
 
-<a name="SimpleQuery.GetArgs"></a>
-### func \(\*SimpleQuery\) GetArgs
+<a name="NewSimpleQuery"></a>
+### func NewSimpleQuery
 
 ```go
-func (q *SimpleQuery) GetArgs() []any
+func NewSimpleQuery(sql string, args, results []any) *SimpleQuery
 ```
 
 
 
-<a name="SimpleQuery.GetResults"></a>
-### func \(\*SimpleQuery\) GetResults
+<a name="SimpleQuery.Args"></a>
+### func \(\*SimpleQuery\) Args
 
 ```go
-func (q *SimpleQuery) GetResults() []any
+func (q *SimpleQuery) Args() []any
 ```
 
 
 
-<a name="SimpleQuery.GetSQL"></a>
-### func \(\*SimpleQuery\) GetSQL
+<a name="SimpleQuery.Results"></a>
+### func \(\*SimpleQuery\) Results
 
 ```go
-func (q *SimpleQuery) GetSQL() string
+func (q *SimpleQuery) Results() []any
+```
+
+
+
+<a name="SimpleQuery.SQL"></a>
+### func \(\*SimpleQuery\) SQL
+
+```go
+func (q *SimpleQuery) SQL() string
 ```
 
 
@@ -648,15 +666,15 @@ type Table struct {
     DAO string
 
     // DisableActiveRecord set to `true` disables:
-    //  - generation of Tuple type. The Model type itself will be accepted/returned by the DAO methods.
-    //  - generation of accessor methods (Get/Set)
+    //  - generation of Record type. The Model type itself will be accepted/returned by the DAO methods.
+    //  - generation of accessor methods (getters/setters)
     //  - mutators
     //  - generation of "smart" Update methods (only the FullUpdate method will be generated)
     //
     // Use it for tables with simple schemas or for "SELECT-only" data.
     DisableActiveRecord bool
 
-    // EnableLock isn't implemented yet. Avoid using the Model (or Tuple) types from
+    // EnableLock isn't implemented yet. Avoid using the Model (or Record) types from
     // multiple goroutines!
     EnableLock bool // TODO
 
@@ -665,7 +683,7 @@ type Table struct {
     // Also known as "UPSERT".
     //
     // A primary key is required for tables with UpdateOnConflict enabled.
-    UpdateOnConflict bool // aka UPSERT. primary key is required.
+    UpdateOnConflict bool
 
     // OnConflictDoNothing issues `ON CONFLICT DO NOTHING` for `INSERT` queries.
     // A primary key is required for tables with UpdateOnConflict enabled.

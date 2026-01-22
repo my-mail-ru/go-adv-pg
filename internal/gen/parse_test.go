@@ -321,7 +321,8 @@ func TestParse(t *testing.T) {
 		},
 		mustNot: []string{
 			"//go:generate",
-			"GetID",
+			"ID()",
+			"Record()",
 		},
 	}, {
 		name: "no primary key",
@@ -347,7 +348,7 @@ func TestParse(t *testing.T) {
 			"type SelectMultiNoPrimaryKeyByIDTypeKey",
 		},
 		mustNot: []string{
-			"GetID",
+			"ID()",
 			"queryDeleteByNoPrimaryKeyID(inID int)",
 			"queryFullUpdate()",
 		},
@@ -378,7 +379,7 @@ func TestParse(t *testing.T) {
 			"type DeleteMultiByIDTypeKey",
 		},
 		mustNot: []string{
-			"GetID",
+			"ID()",
 			"queryFullUpdate()",
 		},
 	}, {
@@ -494,11 +495,12 @@ func TestParse(t *testing.T) {
 			"queryDeleteByID(inID int)",
 			"queryInsert()",
 			"queryFullUpdate()",
-			"GetID",
+			"ID()",
 			"SetID",
 			"SetType",
-			"GetCreatedAt",
+			"CreatedAt()",
 			"querySelectMutators",
+			"Record()",
 		},
 		mustNot: []string{
 			"SetCreatedAt",
