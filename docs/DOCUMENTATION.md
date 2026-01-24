@@ -709,6 +709,188 @@ func (t *Table) Validate() error
 
 Validate ensures that the Model is always specified for a [Table](<#Table>).
 
+# advpgconn
+
+```go
+import "github.com/my-mail-ru/go-adv-pg/conn"
+```
+
+## Index
+
+- [Constants](<#constants>)
+- [func LoadConnConfig\(config Config\) \(masterConf, replicaConf \*pgx.ConnConfig, err error\)](<#LoadConnConfig>)
+- [func LoadPoolConfig\(config Config\) \(masterConf, replicaConf \*pgxpool.Config, err error\)](<#LoadPoolConfig>)
+- [type Config](<#Config>)
+- [type Conn](<#Conn>)
+  - [func NewConn\(ctx context.Context, config Config\) \(\*Conn, error\)](<#NewConn>)
+  - [func \(c \*Conn\) Config\(\) Config](<#Conn.Config>)
+  - [func \(c \*Conn\) Replica\(\) \*pgx.Conn](<#Conn.Replica>)
+- [type Pool](<#Pool>)
+  - [func NewPool\(ctx context.Context, config Config\) \(\*Pool, error\)](<#NewPool>)
+  - [func \(p \*Pool\) Config\(\) Config](<#Pool.Config>)
+  - [func \(p \*Pool\) Replica\(\) \*pgxpool.Pool](<#Pool.Replica>)
+- [type TimeoutTracer](<#TimeoutTracer>)
+  - [func \(\*TimeoutTracer\) TraceQueryEnd\(ctx context.Context, \_ \*pgx.Conn, \_ pgx.TraceQueryEndData\)](<#TimeoutTracer.TraceQueryEnd>)
+  - [func \(tt \*TimeoutTracer\) TraceQueryStart\(ctx context.Context, \_ \*pgx.Conn, \_ pgx.TraceQueryStartData\) context.Context](<#TimeoutTracer.TraceQueryStart>)
+
+
+## Constants
+
+<a name="DefaultTimeout"></a>
+
+```go
+const (
+    DefaultTimeout                   = 30 * time.Second
+    DefaultPoolMaxConnLifetime       = 0
+    DefaultPoolMaxConnLifetimeJitter = 0
+    DefaultMaxConnIdleTime           = 0
+    DefaultPingTimeout               = 0
+    DefaultHealthcheckPeriod         = 0
+    DefaultPoolSize                  = 10
+    DefaultPoolMinSize               = 1
+    DefaultPoolIdleConns             = 0
+)
+```
+
+<a name="LoadConnConfig"></a>
+## func LoadConnConfig
+
+```go
+func LoadConnConfig(config Config) (masterConf, replicaConf *pgx.ConnConfig, err error)
+```
+
+
+
+<a name="LoadPoolConfig"></a>
+## func LoadPoolConfig
+
+```go
+func LoadPoolConfig(config Config) (masterConf, replicaConf *pgxpool.Config, err error)
+```
+
+
+
+<a name="Config"></a>
+## type Config
+
+
+
+```go
+type Config interface {
+    Path(string) string
+    GetStringErr(string) (string, error)
+    GetIntErr(string) (int, error)
+    GetDurationErr(string) (time.Duration, error)
+}
+```
+
+<a name="Conn"></a>
+## type Conn
+
+
+
+```go
+type Conn struct {
+    *pgx.Conn
+    // contains filtered or unexported fields
+}
+```
+
+<a name="NewConn"></a>
+### func NewConn
+
+```go
+func NewConn(ctx context.Context, config Config) (*Conn, error)
+```
+
+
+
+<a name="Conn.Config"></a>
+### func \(\*Conn\) Config
+
+```go
+func (c *Conn) Config() Config
+```
+
+
+
+<a name="Conn.Replica"></a>
+### func \(\*Conn\) Replica
+
+```go
+func (c *Conn) Replica() *pgx.Conn
+```
+
+
+
+<a name="Pool"></a>
+## type Pool
+
+
+
+```go
+type Pool struct {
+    *pgxpool.Pool
+    // contains filtered or unexported fields
+}
+```
+
+<a name="NewPool"></a>
+### func NewPool
+
+```go
+func NewPool(ctx context.Context, config Config) (*Pool, error)
+```
+
+
+
+<a name="Pool.Config"></a>
+### func \(\*Pool\) Config
+
+```go
+func (p *Pool) Config() Config
+```
+
+
+
+<a name="Pool.Replica"></a>
+### func \(\*Pool\) Replica
+
+```go
+func (p *Pool) Replica() *pgxpool.Pool
+```
+
+
+
+<a name="TimeoutTracer"></a>
+## type TimeoutTracer
+
+
+
+```go
+type TimeoutTracer struct {
+    // contains filtered or unexported fields
+}
+```
+
+<a name="TimeoutTracer.TraceQueryEnd"></a>
+### func \(\*TimeoutTracer\) TraceQueryEnd
+
+```go
+func (*TimeoutTracer) TraceQueryEnd(ctx context.Context, _ *pgx.Conn, _ pgx.TraceQueryEndData)
+```
+
+
+
+<a name="TimeoutTracer.TraceQueryStart"></a>
+### func \(\*TimeoutTracer\) TraceQueryStart
+
+```go
+func (tt *TimeoutTracer) TraceQueryStart(ctx context.Context, _ *pgx.Conn, _ pgx.TraceQueryStartData) context.Context
+```
+
+
+
 # adv\-pg
 
 ```go
