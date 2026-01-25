@@ -29,6 +29,7 @@ const (
 
 type Config interface {
 	Path(string) string
+	GetBool(string, bool) bool
 	GetStringErr(string) (string, error)
 	GetIntErr(string) (int, error)
 	GetDurationErr(string) (time.Duration, error)
@@ -63,44 +64,50 @@ func LoadConnConfig(config Config) (masterConf, replicaConf *pgx.ConnConfig, err
 
 	masterConf.Password, err = config.GetStringErr("/password")
 	if err != nil {
-		return nil, nil, fmt.Errorf("%s: %w", config.Path("/pass"), err)
+		return nil, nil, fmt.Errorf("%s: %w", config.Path("/password"), err)
 	}
 
 	timeout, err := getDur(config, "/timeout", DefaultTimeout)
 	if err != nil {
-		return nil, nil, fmt.Errorf("%s: %w", config.Path("/timeout"), err)
+		return nil, nil, err
 	}
 
-	masterConf.ConnectTimeout = timeout
-
-	statementTimeout, err := getDur(config, "/set_statement_timeout", 0)
+	masterConf.ConnectTimeout, err = getDur(config, "/connect_timeout", timeout)
 	if err != nil {
-		return nil, nil, fmt.Errorf("%s: %w", config.Path("/set_statement_timeout"), err)
+		return nil, nil, err
 	}
 
-	if statementTimeout != 0 {
-		masterConf.AfterConnect = func(ctx context.Context, conn *pgconn.PgConn) error {
-			ctx, cancel := context.WithTimeout(ctx, timeout)
-			defer cancel()
+	tracer := newTimeoutTracer(config, timeout)
+	masterConf.Tracer = tracer
 
-			query := "SET statement_timeout = " + strconv.FormatInt(timeout.Milliseconds(), 10)
-			result := conn.Exec(ctx, query)
-
-			if err := result.Close(); err != nil {
-				return fmt.Errorf("%q: %w", query, err)
-			}
-
+	masterConf.AfterConnect = func(ctx context.Context, conn *pgconn.PgConn) error {
+		if !config.GetBool("/set_statement_timeout", false) {
 			return nil
 		}
+
+		timeout := tracer.loadTimeout()
+
+		ctx, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
+
+		query := "SET statement_timeout = " + strconv.FormatInt(timeout.Milliseconds(), 10)
+		result := conn.Exec(ctx, query)
+
+		if err := result.Close(); err != nil {
+			return fmt.Errorf("%q: %w", query, err)
+		}
+
+		return nil
 	}
 
 	masterConf.DefaultQueryExecMode = pgx.QueryExecModeSimpleProtocol
-	masterConf.Tracer = &TimeoutTracer{timeout: timeout}
-
-	replicaConf = masterConf.Copy()
 
 	replicasStr, err := config.GetStringErr("/replica")
 	if err != nil {
+		if errors.Is(err, onlineconf.ErrNotFound) {
+			return masterConf, nil, nil
+		}
+
 		return nil, nil, fmt.Errorf("%s: %w", config.Path("/replica"), err)
 	}
 
@@ -108,6 +115,8 @@ func LoadConnConfig(config Config) (masterConf, replicaConf *pgx.ConnConfig, err
 	if len(replicas) == 0 {
 		return nil, nil, fmt.Errorf("%s: replica list is empty", config.Path("/replica"))
 	}
+
+	replicaConf = masterConf.Copy()
 
 	replicaConf.Host, replicaConf.Port, err = parseHostPort(replicas[0], "/replica", config)
 	if err != nil {
@@ -190,6 +199,10 @@ func LoadPoolConfig(config Config) (masterConf, replicaConf *pgxpool.Config, err
 	masterConf.MinIdleConns, err = getInt32(config, "/pool_min_idle_conns", DefaultPoolIdleConns)
 	if err != nil {
 		return nil, nil, err
+	}
+
+	if replicaConnConf == nil {
+		return masterConf, nil, nil
 	}
 
 	replicaConf = masterConf.Copy()
