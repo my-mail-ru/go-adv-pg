@@ -718,17 +718,17 @@ import "github.com/my-mail-ru/go-adv-pg/conn"
 ## Index
 
 - [Constants](<#constants>)
-- [func LoadConnConfig\(config Config\) \(masterConf, replicaConf \*pgx.ConnConfig, err error\)](<#LoadConnConfig>)
-- [func LoadPoolConfig\(config Config\) \(masterConf, replicaConf \*pgxpool.Config, err error\)](<#LoadPoolConfig>)
-- [type Config](<#Config>)
+- [func LoadConnConfigs\(config OnlineConf\) \(masterConf, replicaConf \*pgx.ConnConfig, err error\)](<#LoadConnConfigs>)
+- [func LoadPoolConfigs\(config OnlineConf\) \(masterConf, replicaConf \*pgxpool.Config, err error\)](<#LoadPoolConfigs>)
 - [type Conn](<#Conn>)
-  - [func NewConn\(ctx context.Context, config Config\) \(\*Conn, error\)](<#NewConn>)
-  - [func \(c \*Conn\) Config\(\) Config](<#Conn.Config>)
+  - [func NewConn\(ctx context.Context, config OnlineConf\) \(\*Conn, error\)](<#NewConn>)
+  - [func \(c \*Conn\) OnlineConf\(\) OnlineConf](<#Conn.OnlineConf>)
   - [func \(c \*Conn\) Replica\(\) \*pgx.Conn](<#Conn.Replica>)
   - [func \(c \*Conn\) ReplicaPerTable\(table string\) \*pgx.Conn](<#Conn.ReplicaPerTable>)
+- [type OnlineConf](<#OnlineConf>)
 - [type Pool](<#Pool>)
-  - [func NewPool\(ctx context.Context, config Config\) \(\*Pool, error\)](<#NewPool>)
-  - [func \(p \*Pool\) Config\(\) Config](<#Pool.Config>)
+  - [func NewPool\(ctx context.Context, config OnlineConf\) \(\*Pool, error\)](<#NewPool>)
+  - [func \(p \*Pool\) OnlineConf\(\) OnlineConf](<#Pool.OnlineConf>)
   - [func \(p \*Pool\) Replica\(\) \*pgxpool.Pool](<#Pool.Replica>)
 - [type QueryInfo](<#QueryInfo>)
   - [func QueryInfoFromContext\(ctx context.Context\) \*QueryInfo](<#QueryInfoFromContext>)
@@ -742,49 +742,34 @@ import "github.com/my-mail-ru/go-adv-pg/conn"
 ```go
 const (
     DefaultTimeout                   = 30 * time.Second
+    DefaultPoolMaxConns              = 10
+    DefaultPoolMinConns              = 1
+    DefaultPoolMinIdleConns          = 0
     DefaultPoolMaxConnLifetime       = 0
     DefaultPoolMaxConnLifetimeJitter = 0
+    DefaultHealthcheckPeriod         = 0
     DefaultMaxConnIdleTime           = 0
     DefaultPingTimeout               = 0
-    DefaultHealthcheckPeriod         = 0
-    DefaultPoolSize                  = 10
-    DefaultPoolMinSize               = 1
-    DefaultPoolIdleConns             = 0
 )
 ```
 
-<a name="LoadConnConfig"></a>
-## func [LoadConnConfig](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/config.go#L40>)
+<a name="LoadConnConfigs"></a>
+## func [LoadConnConfigs](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/config.go#L141>)
 
 ```go
-func LoadConnConfig(config Config) (masterConf, replicaConf *pgx.ConnConfig, err error)
+func LoadConnConfigs(config OnlineConf) (masterConf, replicaConf *pgx.ConnConfig, err error)
 ```
 
 
 
-<a name="LoadPoolConfig"></a>
-## func [LoadPoolConfig](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/config.go#L154>)
+<a name="LoadPoolConfigs"></a>
+## func [LoadPoolConfigs](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/config.go#L244>)
 
 ```go
-func LoadPoolConfig(config Config) (masterConf, replicaConf *pgxpool.Config, err error)
+func LoadPoolConfigs(config OnlineConf) (masterConf, replicaConf *pgxpool.Config, err error)
 ```
 
 
-
-<a name="Config"></a>
-## type [Config](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/config.go#L30-L36>)
-
-
-
-```go
-type Config interface {
-    Path(string) string
-    GetBool(string, bool) bool
-    GetStringErr(string) (string, error)
-    GetIntErr(string) (int, error)
-    GetDurationErr(string) (time.Duration, error)
-}
-```
 
 <a name="Conn"></a>
 ## type [Conn](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L16-L20>)
@@ -802,16 +787,16 @@ type Conn struct {
 ### func [NewConn](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L42>)
 
 ```go
-func NewConn(ctx context.Context, config Config) (*Conn, error)
+func NewConn(ctx context.Context, config OnlineConf) (*Conn, error)
 ```
 
 
 
-<a name="Conn.Config"></a>
-### func \(\*Conn\) [Config](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L38>)
+<a name="Conn.OnlineConf"></a>
+### func \(\*Conn\) [OnlineConf](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L38>)
 
 ```go
-func (c *Conn) Config() Config
+func (c *Conn) OnlineConf() OnlineConf
 ```
 
 
@@ -834,6 +819,21 @@ func (c *Conn) ReplicaPerTable(table string) *pgx.Conn
 
 
 
+<a name="OnlineConf"></a>
+## type [OnlineConf](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/config.go#L30-L36>)
+
+
+
+```go
+type OnlineConf interface {
+    Path(string) string
+    GetBool(string, bool) bool
+    GetStringErr(string) (string, error)
+    GetIntErr(string) (int, error)
+    GetDurationErr(string) (time.Duration, error)
+}
+```
+
 <a name="Pool"></a>
 ## type [Pool](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L64-L68>)
 
@@ -850,16 +850,16 @@ type Pool struct {
 ### func [NewPool](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L82>)
 
 ```go
-func NewPool(ctx context.Context, config Config) (*Pool, error)
+func NewPool(ctx context.Context, config OnlineConf) (*Pool, error)
 ```
 
 
 
-<a name="Pool.Config"></a>
-### func \(\*Pool\) [Config](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L78>)
+<a name="Pool.OnlineConf"></a>
+### func \(\*Pool\) [OnlineConf](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L78>)
 
 ```go
-func (p *Pool) Config() Config
+func (p *Pool) OnlineConf() OnlineConf
 ```
 
 

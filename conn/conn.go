@@ -16,7 +16,7 @@ import (
 type Conn struct {
 	*pgx.Conn
 	replica *pgx.Conn
-	config  Config
+	config  OnlineConf
 }
 
 func (c *Conn) Replica() *pgx.Conn {
@@ -35,12 +35,12 @@ func (c *Conn) ReplicaPerTable(table string) *pgx.Conn {
 	return c.replica
 }
 
-func (c *Conn) Config() Config {
+func (c *Conn) OnlineConf() OnlineConf {
 	return c.config
 }
 
-func NewConn(ctx context.Context, config Config) (*Conn, error) {
-	masterConf, replicaConf, err := LoadConnConfig(config)
+func NewConn(ctx context.Context, config OnlineConf) (*Conn, error) {
+	masterConf, replicaConf, err := LoadConnConfigs(config)
 	if err != nil {
 		return nil, err
 	}
@@ -64,7 +64,7 @@ func NewConn(ctx context.Context, config Config) (*Conn, error) {
 type Pool struct {
 	*pgxpool.Pool
 	replica *pgxpool.Pool
-	config  Config
+	config  OnlineConf
 }
 
 func (p *Pool) Replica() *pgxpool.Pool {
@@ -75,12 +75,12 @@ func (p *Pool) Replica() *pgxpool.Pool {
 	return p.Pool
 }
 
-func (p *Pool) Config() Config {
+func (p *Pool) OnlineConf() OnlineConf {
 	return p.config
 }
 
-func NewPool(ctx context.Context, config Config) (*Pool, error) {
-	masterConf, replicaConf, err := LoadPoolConfig(config)
+func NewPool(ctx context.Context, config OnlineConf) (*Pool, error) {
+	masterConf, replicaConf, err := LoadPoolConfigs(config)
 	if err != nil {
 		return nil, err
 	}
@@ -102,11 +102,11 @@ func NewPool(ctx context.Context, config Config) (*Pool, error) {
 }
 
 type timeoutTracer struct {
-	config      Config
+	config      OnlineConf
 	prevTimeout atomic.Int64
 }
 
-func newTimeoutTracer(config Config, origTimeout time.Duration) *timeoutTracer {
+func newTimeoutTracer(config OnlineConf, origTimeout time.Duration) *timeoutTracer {
 	ret := &timeoutTracer{config: config}
 	ret.prevTimeout.Store(int64(origTimeout))
 

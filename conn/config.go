@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -17,17 +17,17 @@ import (
 
 const (
 	DefaultTimeout                   = 30 * time.Second
+	DefaultPoolMaxConns              = 10
+	DefaultPoolMinConns              = 1
+	DefaultPoolMinIdleConns          = 0
 	DefaultPoolMaxConnLifetime       = 0
 	DefaultPoolMaxConnLifetimeJitter = 0
+	DefaultHealthcheckPeriod         = 0
 	DefaultMaxConnIdleTime           = 0
 	DefaultPingTimeout               = 0
-	DefaultHealthcheckPeriod         = 0
-	DefaultPoolSize                  = 10
-	DefaultPoolMinSize               = 1
-	DefaultPoolIdleConns             = 0
 )
 
-type Config interface {
+type OnlineConf interface {
 	Path(string) string
 	GetBool(string, bool) bool
 	GetStringErr(string) (string, error)
@@ -37,50 +37,87 @@ type Config interface {
 
 var replicasRegexp = regexp.MustCompile(`\s*[,;]\s*`)
 
-func LoadConnConfig(config Config) (masterConf, replicaConf *pgx.ConnConfig, err error) {
-	masterConf = &pgx.ConnConfig{}
-
+func loadConnStrings(config OnlineConf) (masterConnString, replicaConnString *strings.Builder, timeout time.Duration, err error) {
 	hostPort, err := config.GetStringErr("/host")
 	if err != nil {
-		return nil, nil, fmt.Errorf("%s: %w", config.Path("/host"), err)
-	}
-
-	masterConf.Host, masterConf.Port, err = parseHostPort(hostPort, "/host", config)
-	if err != nil {
-		return nil, nil, err
+		return nil, nil, 0, fmt.Errorf("%s: %w", config.Path("/host"), err)
 	}
 
 	base, err := config.GetStringErr("/base")
 	if err != nil {
-		return nil, nil, fmt.Errorf("%s: %w", config.Path("/base"), err)
+		return nil, nil, 0, fmt.Errorf("%s: %w", config.Path("/base"), err)
 	}
 
-	masterConf.Database = base
-
-	masterConf.User, err = config.GetStringErr("/user")
+	user, err := config.GetStringErr("/user")
 	if err != nil {
-		return nil, nil, fmt.Errorf("%s: %w", config.Path("/user"), err)
+		return nil, nil, 0, fmt.Errorf("%s: %w", config.Path("/user"), err)
 	}
 
-	masterConf.Password, err = config.GetStringErr("/password")
+	pass, err := config.GetStringErr("/pass")
 	if err != nil {
-		return nil, nil, fmt.Errorf("%s: %w", config.Path("/password"), err)
+		return nil, nil, 0, fmt.Errorf("%s: %w", config.Path("/pass"), err)
 	}
 
-	timeout, err := getDur(config, "/timeout", DefaultTimeout)
+	timeout, err = getDur(config, "/timeout", DefaultTimeout)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, 0, err
 	}
 
-	masterConf.ConnectTimeout, err = getDur(config, "/connect_timeout", timeout)
+	connectTimeout, err := getDur(config, "/connect_timeout", timeout)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, 0, err
 	}
 
+	masterConnString = buildConnString(user, pass, []string{hostPort}, base, connectTimeout)
+
+	replicasStr, err := config.GetStringErr("/replica")
+	if err != nil {
+		if errors.Is(err, onlineconf.ErrNotFound) {
+			return masterConnString, nil, 0, nil
+		}
+
+		return nil, nil, 0, fmt.Errorf("%s: %w", config.Path("/replica"), err)
+	}
+
+	replicas := replicasRegexp.Split(replicasStr, -1)
+	if len(replicas) == 0 {
+		return nil, nil, 0, fmt.Errorf("%s: replica list is empty", config.Path("/replica"))
+	}
+
+	return masterConnString, buildConnString(user, pass, replicas, base, connectTimeout), timeout, nil
+}
+
+func buildConnString(user, pass string, hostPorts []string, base string, connectTimeout time.Duration) *strings.Builder {
+	ret := &strings.Builder{}
+
+	ret.WriteString("postgresql://")
+	ret.WriteString(user)
+	ret.WriteByte(':')
+	ret.WriteString(pass)
+	ret.WriteByte('@')
+
+	for i, hostPort := range hostPorts {
+		if i != 0 {
+			ret.WriteByte(',')
+		}
+
+		ret.WriteString(hostPort)
+	}
+
+	ret.WriteByte('/')
+	ret.WriteString(base)
+	ret.WriteString("?default_query_exec_mode=simple_protocol&connect_timeout=")
+	// ret.WriteString(connectTimeout.String())
+	ret.WriteString(strconv.FormatInt(int64(connectTimeout/time.Second), 10)) // XXX parseConnectTimeoutSetting is ill
+
+	return ret
+}
+
+func attachTimeoutTracer(config OnlineConf, connConfig *pgx.ConnConfig, timeout time.Duration) {
 	tracer := newTimeoutTracer(config, timeout)
-	masterConf.Tracer = tracer
+	connConfig.Tracer = tracer
 
-	masterConf.AfterConnect = func(ctx context.Context, conn *pgconn.PgConn) error {
+	connConfig.AfterConnect = func(ctx context.Context, conn *pgconn.PgConn) error {
 		if !config.GetBool("/set_statement_timeout", false) {
 			return nil
 		}
@@ -99,77 +136,123 @@ func LoadConnConfig(config Config) (masterConf, replicaConf *pgx.ConnConfig, err
 
 		return nil
 	}
+}
 
-	masterConf.DefaultQueryExecMode = pgx.QueryExecModeSimpleProtocol
-
-	replicasStr, err := config.GetStringErr("/replica")
-	if err != nil {
-		if errors.Is(err, onlineconf.ErrNotFound) {
-			return masterConf, nil, nil
-		}
-
-		return nil, nil, fmt.Errorf("%s: %w", config.Path("/replica"), err)
-	}
-
-	replicas := replicasRegexp.Split(replicasStr, -1)
-	if len(replicas) == 0 {
-		return nil, nil, fmt.Errorf("%s: replica list is empty", config.Path("/replica"))
-	}
-
-	replicaConf = masterConf.Copy()
-
-	replicaConf.Host, replicaConf.Port, err = parseHostPort(replicas[0], "/replica", config)
+func LoadConnConfigs(config OnlineConf) (masterConf, replicaConf *pgx.ConnConfig, err error) {
+	masterConnString, replicaConnString, timeout, err := loadConnStrings(config)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	for _, replica := range replicas[1:] {
-		fbc := &pgconn.FallbackConfig{}
+	masterConf, err = pgx.ParseConfig(masterConnString.String())
+	if err != nil {
+		return nil, nil, err
+	}
 
-		fbc.Host, fbc.Port, err = parseHostPort(replica, "/replica", config)
+	attachTimeoutTracer(config, masterConf, timeout)
+
+	if replicaConnString != nil {
+		replicaConf, err = pgx.ParseConfig(masterConnString.String())
 		if err != nil {
 			return nil, nil, err
 		}
 
-		replicaConf.Fallbacks = append(replicaConf.Fallbacks, fbc)
+		replicaConf.Tracer = masterConf.Tracer
+		replicaConf.AfterConnect = masterConf.AfterConnect
 	}
 
 	return masterConf, replicaConf, nil
 }
 
-func parseHostPort(hostPort, path string, config Config) (string, uint16, error) {
-	host, portStr, err := net.SplitHostPort(hostPort)
+func loadPoolConnStrings(config OnlineConf) (masterConnString, replicaConnString *strings.Builder, timeout time.Duration, err error) {
+	masterConnString, replicaConnString, timeout, err = loadConnStrings(config)
 	if err != nil {
-		return "", 0, fmt.Errorf("%s: %s: %w", config.Path(path), hostPort, err)
+		return nil, nil, 0, err
 	}
 
-	port, err := strconv.ParseUint(portStr, 10, 16)
+	maxConns, err := getInt(config, "/pool_max_conns", -1)
 	if err != nil {
-		return "", 0, fmt.Errorf("%s: %s: %w", config.Path(path), portStr, err)
+		return nil, nil, 0, err
 	}
 
-	return host, uint16(port), nil
+	if maxConns == -1 {
+		maxConns, err = getInt(config, "/pool_size", DefaultPoolMaxConns) // perl-compatible
+		if err != nil {
+			return nil, nil, 0, err
+		}
+	}
+
+	appendParam("&pool_max_conns=", strconv.Itoa(maxConns), masterConnString, replicaConnString)
+
+	minConns, err := getInt(config, "/pool_min_conns", DefaultPoolMinConns)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+
+	if minConns != 0 {
+		appendParam("&pool_min_conns=", strconv.Itoa(minConns), masterConnString, replicaConnString)
+	}
+
+	minIdleConns, err := getInt(config, "/pool_min_idle_conns", DefaultPoolMinIdleConns)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+
+	if minIdleConns != 0 {
+		appendParam("&pool_min_idle_conns=", strconv.Itoa(minIdleConns), masterConnString, replicaConnString)
+	}
+
+	maxConnLifetime, err := getDur(config, "/pool_max_conn_lifetime", DefaultPoolMaxConnLifetime)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+
+	if maxConnLifetime != 0 {
+		appendParam("&pool_max_conn_lifetime=", maxConnLifetime.String(), masterConnString, replicaConnString)
+	}
+
+	maxConnLifetimeJitter, err := getDur(config, "/pool_max_conn_lifetime_jitter", DefaultPoolMaxConnLifetimeJitter)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+
+	if maxConnLifetimeJitter != 0 {
+		appendParam("&pool_max_conn_lifetime_jitter=", maxConnLifetimeJitter.String(), masterConnString, replicaConnString)
+	}
+
+	healthCheckPeriod, err := getDur(config, "/pool_health_check_period", DefaultHealthcheckPeriod)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+
+	if healthCheckPeriod != 0 {
+		appendParam("&pool_health_check_period=", healthCheckPeriod.String(), masterConnString, replicaConnString)
+	}
+
+	return masterConnString, replicaConnString, timeout, nil
 }
 
-func LoadPoolConfig(config Config) (masterConf, replicaConf *pgxpool.Config, err error) {
-	masterConnConf, replicaConnConf, err := LoadConnConfig(config)
+func appendParam(key, val string, builders ...*strings.Builder) {
+	for _, builder := range builders {
+		if builder != nil {
+			builder.WriteString(key)
+			builder.WriteString(val)
+		}
+	}
+}
+
+func LoadPoolConfigs(config OnlineConf) (masterConf, replicaConf *pgxpool.Config, err error) {
+	masterConnString, replicaConnString, timeout, err := loadPoolConnStrings(config)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	masterConf = &pgxpool.Config{
-		ConnConfig: masterConnConf,
-	}
-
-	masterConf.MaxConnLifetime, err = getDur(config, "/pool_max_conn_lifetime", DefaultPoolMaxConnLifetime)
+	masterConf, err = pgxpool.ParseConfig(masterConnString.String())
 	if err != nil {
 		return nil, nil, err
 	}
 
-	masterConf.MaxConnLifetimeJitter, err = getDur(config, "/pool_max_conn_lifetime_jitter", DefaultPoolMaxConnLifetimeJitter)
-	if err != nil {
-		return nil, nil, err
-	}
+	attachTimeoutTracer(config, masterConf.ConnConfig, timeout)
 
 	masterConf.MaxConnIdleTime, err = getDur(config, "/pool_max_conn_idle_time", DefaultMaxConnIdleTime)
 	if err != nil {
@@ -181,37 +264,22 @@ func LoadPoolConfig(config Config) (masterConf, replicaConf *pgxpool.Config, err
 		return nil, nil, err
 	}
 
-	masterConf.HealthCheckPeriod, err = getDur(config, "/pool_healthcheck_period", DefaultHealthcheckPeriod)
-	if err != nil {
-		return nil, nil, err
-	}
+	if replicaConnString != nil {
+		replicaConf, err = pgxpool.ParseConfig(replicaConnString.String())
+		if err != nil {
+			return nil, nil, err
+		}
 
-	masterConf.MaxConns, err = getInt32(config, "/pool_size", DefaultPoolSize)
-	if err != nil {
-		return nil, nil, err
+		replicaConf.ConnConfig.Tracer = masterConf.ConnConfig.Tracer
+		replicaConf.ConnConfig.AfterConnect = masterConf.ConnConfig.AfterConnect
+		replicaConf.MaxConnIdleTime = masterConf.MaxConnIdleTime
+		replicaConf.PingTimeout = masterConf.PingTimeout
 	}
-
-	masterConf.MinConns, err = getInt32(config, "/pool_min_size", DefaultPoolMinSize)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	masterConf.MinIdleConns, err = getInt32(config, "/pool_min_idle_conns", DefaultPoolIdleConns)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	if replicaConnConf == nil {
-		return masterConf, nil, nil
-	}
-
-	replicaConf = masterConf.Copy()
-	replicaConf.ConnConfig = replicaConnConf
 
 	return masterConf, replicaConf, nil
 }
 
-func getDur(config Config, path string, dfl time.Duration) (time.Duration, error) {
+func getDur(config OnlineConf, path string, dfl time.Duration) (time.Duration, error) {
 	dur, err := config.GetDurationErr(path)
 	if err == nil {
 		return dur, nil
@@ -224,10 +292,10 @@ func getDur(config Config, path string, dfl time.Duration) (time.Duration, error
 	return dfl, nil
 }
 
-func getInt32(config Config, path string, dfl int32) (int32, error) {
-	i, err := config.GetDurationErr(path)
+func getInt(config OnlineConf, path string, dfl int) (int, error) {
+	i, err := config.GetIntErr(path)
 	if err == nil {
-		return int32(i), nil
+		return i, nil
 	}
 
 	if !errors.Is(err, onlineconf.ErrNotFound) {

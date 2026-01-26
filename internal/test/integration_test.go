@@ -15,8 +15,10 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/onlineconf/onlineconf-go/v2"
 
 	advpg "github.com/my-mail-ru/go-adv-pg"
+	advpgconn "github.com/my-mail-ru/go-adv-pg/conn"
 )
 
 func must(t *testing.T, err error) {
@@ -25,18 +27,24 @@ func must(t *testing.T, err error) {
 	}
 }
 
-func getTestDSN() string {
-	if dsn := os.Getenv("ADVPG_TEST_DSN"); dsn != "" {
-		return dsn
+func getConf(t *testing.T) advpgconn.OnlineConf {
+	cdbName := os.Getenv("ADVPG_ONLINECONF")
+	if cdbName == "" {
+		cdbName = "testdata/config.cdb"
 	}
 
-	return "postgresql://testuser:testpasswd@localhost/testdb"
+	conf, err := onlineconf.OpenModule(cdbName)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return conf
 }
 
 func connectDB(t *testing.T) (context.Context, advpg.DB) {
 	ctx := t.Context()
 
-	db, err := pgx.Connect(ctx, getTestDSN())
+	db, err := advpgconn.NewConn(ctx, getConf(t))
 	if err != nil {
 		t.Fatal(err)
 	}

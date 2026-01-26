@@ -37,7 +37,7 @@ test:
 	$(GO) tool cover -html cover.out -o cover.html
  
 .PHONY: test-integration
-test-integration: dev-env-start
+test-integration: test-conf dev-env-start
 	$(GO) test $(GOFLAGS) -v                \
 	    -count=1                            \
 	    -tags=integration                   \
@@ -48,8 +48,11 @@ test-integration: dev-env-start
 	    ./...                            && \
 	$(GO) tool cover -html cover.integration.out -o cover.integration.html
 
-#%.cdb: %.yaml
-#	$(GO) tool yaml2cdb -in $< -out $@
+.PHONY: test-conf
+test-conf: internal/test/testdata/config.cdb
+
+%.cdb: %.yaml
+	$(GO) tool yaml2cdb -in $< -out $@
 
 dev-env-start:
 	docker compose -f internal/test/testdata/docker-compose.yaml up -d
