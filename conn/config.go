@@ -15,6 +15,7 @@ import (
 	"github.com/onlineconf/onlineconf-go/v2"
 )
 
+// Defaults for connection settings
 const (
 	DefaultTimeout                   = 30 * time.Second
 	DefaultPoolMaxConns              = 10
@@ -27,6 +28,7 @@ const (
 	DefaultPingTimeout               = 0
 )
 
+// OnlineConf dependency. You can use Module, Subtree or any other compatible type.
 type OnlineConf interface {
 	Path(string) string
 	GetBool(string, bool) bool
@@ -138,6 +140,7 @@ func attachTimeoutTracer(config OnlineConf, connConfig *pgx.ConnConfig, timeout 
 	}
 }
 
+// LoadConnConfigs loads the master and the replica(s) configs from the OnlineConf.
 func LoadConnConfigs(config OnlineConf) (masterConf, replicaConf *pgx.ConnConfig, err error) {
 	masterConnString, replicaConnString, timeout, err := loadConnStrings(config)
 	if err != nil {
@@ -241,6 +244,7 @@ func appendParam(key, val string, builders ...*strings.Builder) {
 	}
 }
 
+// LoadPoolConfigs loads the master and the replica(s) pool configs from the OnlineConf.
 func LoadPoolConfigs(config OnlineConf) (masterConf, replicaConf *pgxpool.Config, err error) {
 	masterConnString, replicaConnString, timeout, err := loadPoolConnStrings(config)
 	if err != nil {

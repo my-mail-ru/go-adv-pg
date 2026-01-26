@@ -104,6 +104,12 @@ IsMulti, IsUniq, and also the count of the index keys determine the possible com
 
 - IsMulti: true, a multi\-key index: the Select method accepts a slice of the generated type, which name is the Select method name with "Key" appended. A slice of \[\]Record \(or \[\]$\{Model\) type is returned. Empty \`SELECT\` responses aren't considered as errors and simply return an empty slice.
 
+Some of the following options can be specified after the key\(s\) argument\(s\):
+
+- advpg.[WithLimit](<#WithLimit>) \- override the DefaultLimit specified for an [Index](<#Index>),
+- advpg.[WithOffset](<#WithOffset>) \- use an offset,
+- advpg.[WithReplica](<#WithReplica>) \- whether a replica should be used to perform a query.
+
 Examples:
 
 Having the configuration:
@@ -129,7 +135,7 @@ var _ = advpg.Table{
 1. Simple Select:
 
 ```
-user, err := userDAO.SelectByID(ctx, userID)
+user, err := userDAO.SelectByID(ctx, userID, advpg.WithReplica(true))
 ```
 
 2. SelectMulti by composite key:
@@ -138,7 +144,8 @@ user, err := userDAO.SelectByID(ctx, userID)
 results, err := userDAO.SelectMultiByIDType(ctx, []SelectMultiByIDTypeKey{
 		{ID: 10, Type: 1},
 		{ID: 20, Type: 2},
-    })
+		// ...
+    }, advpg.WithLimit(5))
 ```
 
 ### Delete
@@ -548,45 +555,51 @@ func (qb *QueryBuilder) SetResults(res []any)
 
 
 <a name="SelectOptionFunc"></a>
-## type [SelectOptionFunc](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L429>)
+## type [SelectOptionFunc](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L431>)
 
-
+SelectOptionFunc represent options of Select query methods.
 
 ```go
 type SelectOptionFunc func(*SelectOptions)
 ```
 
 <a name="WithLimit"></a>
-### func [WithLimit](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L431>)
+### func [WithLimit](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L434>)
 
 ```go
 func WithLimit(limit int) SelectOptionFunc
 ```
 
-
+WithLimit overrides the DefaultLimit specified for an [Index](<#Index>).
 
 <a name="WithOffset"></a>
-### func [WithOffset](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L437>)
+### func [WithOffset](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L441>)
 
 ```go
 func WithOffset(offset int) SelectOptionFunc
 ```
 
-
+WithOffset specifies an offset for Select queries.
 
 <a name="WithReplica"></a>
-### func [WithReplica](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L443>)
+### func [WithReplica](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L453>)
 
 ```go
 func WithReplica(use bool) SelectOptionFunc
 ```
 
+WithReplica specifies whether a replica should be used to perform a query:
 
+- true: always use a replica,
+- false: always use a master,
+- not specified: use /table/TableName/force\_replica\_usage setting in the OnlineConf.
+
+If no replica\(s\) are configured, a master will be used instead.
 
 <a name="SelectOptions"></a>
-## type [SelectOptions](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L406-L411>)
+## type [SelectOptions](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L407-L412>)
 
-
+SelectOptions are intended to be used from unit tests and/or generated code. Do not use it directly.
 
 ```go
 type SelectOptions struct {
@@ -595,16 +608,16 @@ type SelectOptions struct {
 ```
 
 <a name="NewSelectOptions"></a>
-### func [NewSelectOptions](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L453>)
+### func [NewSelectOptions](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L464>)
 
 ```go
 func NewSelectOptions(optFuncs ...SelectOptionFunc) *SelectOptions
 ```
 
-
+NewSelectOptions is intended to be used from unit tests and/or generated code. Do not use it directly.
 
 <a name="SelectOptions.Limit"></a>
-### func \(\*SelectOptions\) [Limit](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L413>)
+### func \(\*SelectOptions\) [Limit](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L414>)
 
 ```go
 func (so *SelectOptions) Limit() int
@@ -613,7 +626,7 @@ func (so *SelectOptions) Limit() int
 
 
 <a name="SelectOptions.Offset"></a>
-### func \(\*SelectOptions\) [Offset](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L417>)
+### func \(\*SelectOptions\) [Offset](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L418>)
 
 ```go
 func (so *SelectOptions) Offset() int
@@ -622,7 +635,7 @@ func (so *SelectOptions) Offset() int
 
 
 <a name="SelectOptions.UseMaster"></a>
-### func \(\*SelectOptions\) [UseMaster](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L425>)
+### func \(\*SelectOptions\) [UseMaster](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L426>)
 
 ```go
 func (so *SelectOptions) UseMaster() bool
@@ -631,7 +644,7 @@ func (so *SelectOptions) UseMaster() bool
 
 
 <a name="SelectOptions.UseReplica"></a>
-### func \(\*SelectOptions\) [UseReplica](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L421>)
+### func \(\*SelectOptions\) [UseReplica](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L422>)
 
 ```go
 func (so *SelectOptions) UseReplica() bool
@@ -817,6 +830,69 @@ Validate ensures that the Model is always specified for a [Table](<#Table>).
 import "github.com/my-mail-ru/go-adv-pg/conn"
 ```
 
+Package advpgconn \- configuration and initialization of pgx connections and connection pools.
+
+### OnlineConf
+
+This package uses OnlineConf to configure connections and connection pools. The typical configuration layout is:
+
+```
+confRoot, err := onlineconf.OpenModule("")
+dbSubtree := confRoot.Subtree("/project/db")
+pool, err := advpgconn.NewPool(ctx, dbSubtree) // uses /project/db/base and so on
+```
+
+The [OnlineConf](<#OnlineConf>) interface assumes the [github.com/onlineconf/onlineconf\\\-go/v2](<https://pkg.go.dev/github.com/onlineconf/onlineconf-go/v2/>) llibrary, but you may use any compatible implementation \(or test mock\).
+
+Connection and pool settings are compatible with a Perl implementation. Durations can be specified as integer seconds or [time.Duration](<https://pkg.go.dev/time/#Duration>) syntax \(which obviously isn't compatible with Perl\).
+
+### Connection settings
+
+The following settings are used by [NewConn](<#NewConn>) \(which in turn calls [LoadConnConfigs](<#LoadConnConfigs>)\):
+
+- /host \- the database master host with port,
+- /replica \- the database replica\(s\) host with port. Multiple comma or semicolon host names are supported,
+- /base \- the database name,
+- /user,
+- /pass,
+- /timeout \- query and statement timeout. Default: [DefaultTimeout](<#DefaultTimeout>) \(30s\),
+- /connect\_timeout \- connection timeout. Default: timeout setting,
+- /set\_statement\_timeout \- perform an SET statement\_timeout query after establishing the new connection. Default: don't set a statement timeout \(0\).
+
+Note that round\-robin replica balancing method is not yet supported. The connection to the next host on this list is performed only when the previous one isn't available.
+
+DefaultQueryExecMode is set to SimpleProtocol.
+
+/timeout and /set\_statement\_timeout are checked every time a new connection is established or a query is executed. To change any other connection setting, you have to restart the application \(TODO support configuration reloading\).
+
+### Pool settings
+
+All of the above, plus:
+
+- /pool\_max\_conns \- maximum pool size. Fallback: /pool\_size \(for Perl compatibility\). Default: [DefaultPoolMaxConns](<#DefaultTimeout>) \(10\),
+- /pool\_min\_conns \- minimum pool size. Default: DefaultPoolMinConns \(1\),
+- /pool\_min\_idle\_conns \- minimum number of idle connections in the pool. Default: DefaultPoolMinIdleConns \(0\),
+- /pool\_max\_conn\_lifetime \- duration since creation after which a connection will be automatically closed. Default: not set.
+- /pool\_max\_conn\_lifetime\_jitter \- maximum random increment for /pool\_max\_conn\_lifetime. Default: not set.
+- /pool\_max\_conn\_idle\_time \- Default: not set.
+- /pool\_health\_check\_period \- duration between connection checks. Default: not set.
+- /pool\_ping\_timeout \- maximum amount of time to wait for a ping reply. Default: not set.
+
+For more details, see \[pgxpool.Config\] and \[pgxpool.ParseConfig\].
+
+To change any of these settings, you have to restart the application.
+
+### Table settings
+
+These settings can be set per\-table:
+
+- /table/$\{TableName\}/timeout \- query timeout. Overrides /timeout.
+- /table/$\{TableName\}/force\_replica\_usage \- use a replica for Select queries even if it's not enabled explicitly with \[advpg.WithReplica\].
+
+Note that the /force\_replica\_usage setting isn't compatible with similarly named Perl setting because the Perl implementation uses language\-specific package names instead of table names used by this library.
+
+Per\-table settings are checked on\-the\-fly, so no application restart is required to change these.
+
 ## Index
 
 - [Constants](<#constants>)
@@ -826,13 +902,14 @@ import "github.com/my-mail-ru/go-adv-pg/conn"
 - [type Conn](<#Conn>)
   - [func NewConn\(ctx context.Context, config OnlineConf\) \(\*Conn, error\)](<#NewConn>)
   - [func \(c \*Conn\) OnlineConf\(\) OnlineConf](<#Conn.OnlineConf>)
-  - [func \(c \*Conn\) Replica\(\) \*pgx.Conn](<#Conn.Replica>)
-  - [func \(c \*Conn\) ReplicaPerTable\(table string\) \*pgx.Conn](<#Conn.ReplicaPerTable>)
+  - [func \(c \*Conn\) Replica\(\) advpg.DB](<#Conn.Replica>)
+  - [func \(c \*Conn\) ReplicaPerTable\(table string\) advpg.DB](<#Conn.ReplicaPerTable>)
 - [type OnlineConf](<#OnlineConf>)
 - [type Pool](<#Pool>)
   - [func NewPool\(ctx context.Context, config OnlineConf\) \(\*Pool, error\)](<#NewPool>)
   - [func \(p \*Pool\) OnlineConf\(\) OnlineConf](<#Pool.OnlineConf>)
-  - [func \(p \*Pool\) Replica\(\) \*pgxpool.Pool](<#Pool.Replica>)
+  - [func \(p \*Pool\) Replica\(\) advpg.DB](<#Pool.Replica>)
+  - [func \(p \*Pool\) ReplicaPerTable\(table string\) advpg.DB](<#Pool.ReplicaPerTable>)
 - [type QueryInfo](<#QueryInfo>)
   - [func QueryInfoFromContext\(ctx context.Context\) \*QueryInfo](<#QueryInfoFromContext>)
   - [func \(qi \*QueryInfo\) WithContext\(ctx context.Context\) context.Context](<#QueryInfo.WithContext>)
@@ -840,7 +917,7 @@ import "github.com/my-mail-ru/go-adv-pg/conn"
 
 ## Constants
 
-<a name="DefaultTimeout"></a>
+<a name="DefaultTimeout"></a>Defaults for connection settings
 
 ```go
 const (
@@ -857,36 +934,36 @@ const (
 ```
 
 <a name="LoadConnConfigs"></a>
-## func [LoadConnConfigs](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/config.go#L141>)
+## func [LoadConnConfigs](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/config.go#L144>)
 
 ```go
 func LoadConnConfigs(config OnlineConf) (masterConf, replicaConf *pgx.ConnConfig, err error)
 ```
 
-
+LoadConnConfigs loads the master and the replica\(s\) configs from the OnlineConf.
 
 <a name="LoadPoolConfigs"></a>
-## func [LoadPoolConfigs](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/config.go#L244>)
+## func [LoadPoolConfigs](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/config.go#L248>)
 
 ```go
 func LoadPoolConfigs(config OnlineConf) (masterConf, replicaConf *pgxpool.Config, err error)
 ```
 
-
+LoadPoolConfigs loads the master and the replica\(s\) pool configs from the OnlineConf.
 
 <a name="ReplicaByOpt"></a>
-## func [ReplicaByOpt](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L47>)
+## func [ReplicaByOpt](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L205>)
 
 ```go
 func ReplicaByOpt(db advpg.DB, opt *advpg.SelectOptions, table string) advpg.DB
 ```
 
-
+ReplicaByOpt returns the master or the replica connection \(or pool\) based on the \[advpg.WithReplica\] option and /table/TableName/force\_replica\_usage setting.
 
 <a name="Conn"></a>
-## type [Conn](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L18-L22>)
+## type [Conn](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L20-L24>)
 
-
+Conn represents the master and the replica\(s\) connections. The replica connection is optional, while the master is not.
 
 ```go
 type Conn struct {
@@ -896,45 +973,47 @@ type Conn struct {
 ```
 
 <a name="NewConn"></a>
-### func [NewConn](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L68>)
+### func [NewConn](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L56>)
 
 ```go
 func NewConn(ctx context.Context, config OnlineConf) (*Conn, error)
 ```
 
+NewConn creates the master and optionally the replica\(s\) connection\(s\).
 
+Use single connections for one\-shot cron jobs, cli tools, etc. For high\-availability workload like web servers, use [NewPool](<#NewPool>).
 
 <a name="Conn.OnlineConf"></a>
-### func \(\*Conn\) [OnlineConf](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L64>)
+### func \(\*Conn\) [OnlineConf](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L48>)
 
 ```go
 func (c *Conn) OnlineConf() OnlineConf
 ```
 
-
+OnlineConf returns an [OnlineConf](<#OnlineConf>) instance passed to [NewConn](<#NewConn>).
 
 <a name="Conn.Replica"></a>
-### func \(\*Conn\) [Replica](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L24>)
+### func \(\*Conn\) [Replica](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L28>)
 
 ```go
-func (c *Conn) Replica() *pgx.Conn
+func (c *Conn) Replica() advpg.DB
 ```
 
-
+Replica returns the replica connection if it's configured. The master connection is returned otherwise.
 
 <a name="Conn.ReplicaPerTable"></a>
-### func \(\*Conn\) [ReplicaPerTable](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L32>)
+### func \(\*Conn\) [ReplicaPerTable](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L39>)
 
 ```go
-func (c *Conn) ReplicaPerTable(table string) *pgx.Conn
+func (c *Conn) ReplicaPerTable(table string) advpg.DB
 ```
 
-
+ReplicaPerTable checks /table/TableName/force\_replica\_usage setting in the OnlineConf to determine whether the replica should be used. The master connection is returned otherwise.
 
 <a name="OnlineConf"></a>
-## type [OnlineConf](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/config.go#L30-L36>)
+## type [OnlineConf](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/config.go#L32-L38>)
 
-
+OnlineConf dependency. You can use Module, Subtree or any other compatible type.
 
 ```go
 type OnlineConf interface {
@@ -947,9 +1026,9 @@ type OnlineConf interface {
 ```
 
 <a name="Pool"></a>
-## type [Pool](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L90-L94>)
+## type [Pool](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L80-L84>)
 
-
+Pool represents the master and the replica\(s\) connections pools. The replica pool is optional, while the master is not.
 
 ```go
 type Pool struct {
@@ -959,36 +1038,47 @@ type Pool struct {
 ```
 
 <a name="NewPool"></a>
-### func [NewPool](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L108>)
+### func [NewPool](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L116>)
 
 ```go
 func NewPool(ctx context.Context, config OnlineConf) (*Pool, error)
 ```
 
+NewPool creates the master and optionally the replica\(s\) connection pool\(s\).
 
+Use pooled connections for high\-availability workloads like web servers. For short\-living tasks like one\-shot cron jobs and cli tools, use [NewConn](<#NewConn>).
 
 <a name="Pool.OnlineConf"></a>
-### func \(\*Pool\) [OnlineConf](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L104>)
+### func \(\*Pool\) [OnlineConf](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L108>)
 
 ```go
 func (p *Pool) OnlineConf() OnlineConf
 ```
 
-
+OnlineConf returns an [OnlineConf](<#OnlineConf>) instance passed to [NewPool](<#NewPool>).
 
 <a name="Pool.Replica"></a>
-### func \(\*Pool\) [Replica](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L96>)
+### func \(\*Pool\) [Replica](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L88>)
 
 ```go
-func (p *Pool) Replica() *pgxpool.Pool
+func (p *Pool) Replica() advpg.DB
 ```
 
+Replica returns the replica pool if it's configured. The master pool is returned otherwise.
 
+<a name="Pool.ReplicaPerTable"></a>
+### func \(\*Pool\) [ReplicaPerTable](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L99>)
+
+```go
+func (p *Pool) ReplicaPerTable(table string) advpg.DB
+```
+
+ReplicaPerTable checks /table/TableName/force\_replica\_usage setting in the OnlineConf to determine whether the replica should be used. The master pool is returned otherwise.
 
 <a name="QueryInfo"></a>
-## type [QueryInfo](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/context.go#L5-L8>)
+## type [QueryInfo](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/context.go#L6-L9>)
 
-
+QueryInfo should be moved to the go\-adv\-metrics project TODO
 
 ```go
 type QueryInfo struct {
@@ -998,7 +1088,7 @@ type QueryInfo struct {
 ```
 
 <a name="QueryInfoFromContext"></a>
-### func [QueryInfoFromContext](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/context.go#L16>)
+### func [QueryInfoFromContext](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/context.go#L17>)
 
 ```go
 func QueryInfoFromContext(ctx context.Context) *QueryInfo
@@ -1007,7 +1097,7 @@ func QueryInfoFromContext(ctx context.Context) *QueryInfo
 
 
 <a name="QueryInfo.WithContext"></a>
-### func \(\*QueryInfo\) [WithContext](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/context.go#L12>)
+### func \(\*QueryInfo\) [WithContext](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/context.go#L13>)
 
 ```go
 func (qi *QueryInfo) WithContext(ctx context.Context) context.Context

@@ -2,6 +2,7 @@ package advpgconn
 
 import "context"
 
+// QueryInfo should be moved to the go-adv-metrics project TODO
 type QueryInfo struct {
 	Table string
 	Index string

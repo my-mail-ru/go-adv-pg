@@ -403,6 +403,7 @@ func (qb *QueryBuilder) Results() []any {
 	return qb.results
 }
 
+// SelectOptions are intended to be used from unit tests and/or generated code. Do not use it directly.
 type SelectOptions struct {
 	limit      int
 	offset     int
@@ -426,20 +427,29 @@ func (so *SelectOptions) UseMaster() bool {
 	return so.useMaster
 }
 
+// SelectOptionFunc represent options of Select query methods.
 type SelectOptionFunc func(*SelectOptions)
 
+// WithLimit overrides the DefaultLimit specified for an [Index].
 func WithLimit(limit int) SelectOptionFunc {
 	return func(so *SelectOptions) {
 		so.limit = limit
 	}
 }
 
+// WithOffset specifies an offset for Select queries.
 func WithOffset(offset int) SelectOptionFunc {
 	return func(so *SelectOptions) {
 		so.offset = offset
 	}
 }
 
+// WithReplica specifies whether a replica should be used to perform a query:
+//   - true:  always use a replica,
+//   - false: always use a master,
+//   - not specified: use /table/TableName/force_replica_usage setting in the OnlineConf.
+//
+// If no replica(s) are configured, a master will be used instead.
 func WithReplica(use bool) SelectOptionFunc {
 	return func(so *SelectOptions) {
 		if use {
@@ -450,6 +460,7 @@ func WithReplica(use bool) SelectOptionFunc {
 	}
 }
 
+// NewSelectOptions is intended to be used from unit tests and/or generated code. Do not use it directly.
 func NewSelectOptions(optFuncs ...SelectOptionFunc) *SelectOptions {
 	ret := &SelectOptions{}
 

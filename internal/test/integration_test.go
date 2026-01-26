@@ -115,7 +115,7 @@ func TestUserDAO(t *testing.T) {
 	})
 
 	t.Run("UpdateByStorage", func(t *testing.T) {
-		user, err := userDAO.SelectByID(ctx, userID)
+		user, err := userDAO.SelectByID(ctx, userID, advpg.WithReplica(true))
 		must(t, err)
 
 		user.SetName(user.Name() + " Updated")

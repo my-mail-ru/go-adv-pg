@@ -15,13 +15,17 @@ import (
 	advpg "github.com/my-mail-ru/go-adv-pg"
 )
 
+// Conn represents the master and the replica(s) connections.
+// The replica connection is optional, while the master is not.
 type Conn struct {
 	*pgx.Conn
 	replica *pgx.Conn
 	config  OnlineConf
 }
 
-func (c *Conn) Replica() *pgx.Conn {
+// Replica returns the replica connection if it's configured.
+// The master connection is returned otherwise.
+func (c *Conn) Replica() advpg.DB {
 	if c.replica == nil {
 		return c.Conn
 	}
@@ -29,7 +33,10 @@ func (c *Conn) Replica() *pgx.Conn {
 	return c.replica
 }
 
-func (c *Conn) ReplicaPerTable(table string) *pgx.Conn {
+// ReplicaPerTable checks /table/TableName/force_replica_usage setting in the OnlineConf
+// to determine whether the replica should be used.
+// The master connection is returned otherwise.
+func (c *Conn) ReplicaPerTable(table string) advpg.DB {
 	if c.replica == nil || !c.config.GetBool(path.Join("/table", table, "force_replica_usage"), false) {
 		return c.Conn
 	}
@@ -37,34 +44,15 @@ func (c *Conn) ReplicaPerTable(table string) *pgx.Conn {
 	return c.replica
 }
 
-type replicaConn interface {
-	Replica() *pgx.Conn
-	ReplicaPerTable(table string) *pgx.Conn
-}
-
-var _ replicaConn = &Conn{}
-
-func ReplicaByOpt(db advpg.DB, opt *advpg.SelectOptions, table string) advpg.DB {
-	if opt.UseMaster() {
-		return db
-	}
-
-	repl, ok := db.(replicaConn)
-	if !ok {
-		return db
-	}
-
-	if opt.UseReplica() {
-		return repl.Replica()
-	}
-
-	return repl.ReplicaPerTable(table)
-}
-
+// OnlineConf returns an [OnlineConf] instance passed to [NewConn].
 func (c *Conn) OnlineConf() OnlineConf {
 	return c.config
 }
 
+// NewConn creates the master and optionally the replica(s) connection(s).
+//
+// Use single connections for one-shot cron jobs, cli tools, etc.
+// For high-availability workload like web servers, use [NewPool].
 func NewConn(ctx context.Context, config OnlineConf) (*Conn, error) {
 	masterConf, replicaConf, err := LoadConnConfigs(config)
 	if err != nil {
@@ -87,13 +75,17 @@ func NewConn(ctx context.Context, config OnlineConf) (*Conn, error) {
 	return ret, err
 }
 
+// Pool represents the master and the replica(s) connections pools.
+// The replica pool is optional, while the master is not.
 type Pool struct {
 	*pgxpool.Pool
 	replica *pgxpool.Pool
 	config  OnlineConf
 }
 
-func (p *Pool) Replica() *pgxpool.Pool {
+// Replica returns the replica pool if it's configured.
+// The master pool is returned otherwise.
+func (p *Pool) Replica() advpg.DB {
 	if p.replica != nil {
 		return p.replica
 	}
@@ -101,10 +93,26 @@ func (p *Pool) Replica() *pgxpool.Pool {
 	return p.Pool
 }
 
+// ReplicaPerTable checks /table/TableName/force_replica_usage setting in the OnlineConf
+// to determine whether the replica should be used.
+// The master pool is returned otherwise.
+func (p *Pool) ReplicaPerTable(table string) advpg.DB {
+	if p.replica == nil || !p.config.GetBool(path.Join("/table", table, "force_replica_usage"), false) {
+		return p.Pool
+	}
+
+	return p.replica
+}
+
+// OnlineConf returns an [OnlineConf] instance passed to [NewPool].
 func (p *Pool) OnlineConf() OnlineConf {
 	return p.config
 }
 
+// NewPool creates the master and optionally the replica(s) connection pool(s).
+//
+// Use pooled connections for high-availability workloads like web servers.
+// For short-living tasks like one-shot cron jobs and cli tools, use [NewConn].
 func NewPool(ctx context.Context, config OnlineConf) (*Pool, error) {
 	masterConf, replicaConf, err := LoadPoolConfigs(config)
 	if err != nil {
@@ -180,4 +188,33 @@ func (*timeoutTracer) TraceQueryEnd(ctx context.Context, _ *pgx.Conn, _ pgx.Trac
 	if cancel := ctx.Value(ctxCancel{}); cancel != nil {
 		cancel.(context.CancelFunc)()
 	}
+}
+
+type replicaDB interface {
+	Replica() advpg.DB
+	ReplicaPerTable(table string) advpg.DB
+}
+
+var (
+	_ replicaDB = &Conn{}
+	_ replicaDB = &Pool{}
+)
+
+// ReplicaByOpt returns the master or the replica connection (or pool) based on the [advpg.WithReplica] option
+// and /table/TableName/force_replica_usage setting.
+func ReplicaByOpt(db advpg.DB, opt *advpg.SelectOptions, table string) advpg.DB {
+	if opt.UseMaster() {
+		return db
+	}
+
+	repl, ok := db.(replicaDB)
+	if !ok {
+		return db
+	}
+
+	if opt.UseReplica() {
+		return repl.Replica()
+	}
+
+	return repl.ReplicaPerTable(table)
 }
