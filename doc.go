@@ -119,6 +119,11 @@ arguments and returned values:
     A slice of []Record (or []${Model) type is returned. Empty `SELECT` responses aren't
     considered as errors and simply return an empty slice.
 
+Some of the following options can be specified after the key(s) argument(s):
+  - advpg.[WithLimit] - override the DefaultLimit specified for an [Index],
+  - advpg.[WithOffset] - use an offset,
+  - advpg.[WithReplica] - whether a replica should be used to perform a query.
+
 Examples:
 
 Having the configuration:
@@ -141,14 +146,15 @@ Having the configuration:
 
 1. Simple Select:
 
-	user, err := userDAO.SelectByID(ctx, userID)
+	user, err := userDAO.SelectByID(ctx, userID, advpg.WithReplica(true))
 
 2. SelectMulti by composite key:
 
 	    results, err := userDAO.SelectMultiByIDType(ctx, []SelectMultiByIDTypeKey{
 			{ID: 10, Type: 1},
 			{ID: 20, Type: 2},
-	    })
+			// ...
+	    }, advpg.WithLimit(5))
 
 # Delete
 

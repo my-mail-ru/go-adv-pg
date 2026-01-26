@@ -243,11 +243,14 @@ func (*{{$model.RecordType}}) Table() string {
 		{{ end -}}
 
 		{{- if $idx.Selector -}}
-			func (dao {{$model.DAO}}) {{$idx.Selector}}(ctx context.Context, keys []{{$idx.KeyStructName}}) ([]{{$model.RecordType}}, error) {
+			func (dao {{$model.DAO}}) {{$idx.Selector}}(ctx context.Context, keys []{{$idx.KeyStructName}}, optFuncs ...{{$.AdvPgPkg}}.SelectOptionFunc) ([]{{$model.RecordType}}, error) {
 				var data {{$model.RecordType}}
 				q := data.query{{$idx.Selector}}(keys)
+				ctx = (&{{$.AdvPgConnPkg}}.QueryInfo{Table: {{quote $model.Table.Table}}, Index: {{quote $idx.Name}}}).WithContext(ctx)
+				opt := {{$.AdvPgPkg}}.NewSelectOptions(optFuncs...)
+				db := {{$.AdvPgConnPkg}}.ReplicaByOpt(dao.db, opt, {{quote $model.Table.Table}})
 
-				rows, err := dao.db.Query(ctx, q.SQL(), q.Args()...)
+				rows, err := db.Query(ctx, q.SQL(), q.Args()...)
 				if err != nil {
 					return nil, err
 				}
@@ -275,6 +278,7 @@ func (*{{$model.RecordType}}) Table() string {
 
 		{{- if $idx.Deleter -}}
 			func (dao {{$model.DAO}}) {{$idx.Deleter}}(ctx context.Context, keys []{{$idx.KeyStructName}}) error {
+				ctx = (&{{$.AdvPgConnPkg}}.QueryInfo{Table: {{quote $model.Table.Table}}, Index: {{quote $idx.Name}}}).WithContext(ctx)
 				q := (*{{$model.RecordType}})(nil).query{{$idx.Deleter}}(keys){{/* TODO oh shi... refactor deleter queries */}}
 				_, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
 				return err
@@ -310,19 +314,23 @@ func (*{{$model.RecordType}}) Table() string {
 		{{ end -}}
 
 		{{- if $idx.Selector -}}
-			func (dao {{$model.DAO}}) {{$idx.Selector}}(ctx context.Context, {{ template "query_method_args" $model.IterateIndexKeys $idx }}) (
+			func (dao {{$model.DAO}}) {{$idx.Selector}}(ctx context.Context, {{ template "query_method_args" $model.IterateIndexKeys $idx }}, optFuncs ...{{$.AdvPgPkg}}.SelectOptionFunc) (
 				{{- if not $idx.IsUniq -}} [] {{- end -}}
 			{{$model.RecordType}}, error) {
 				var data {{$model.RecordType}}
 				q := data.query{{$idx.Selector}}({{ template "query_method_keys" $model.IterateIndexKeys $idx }})
+				ctx = (&{{$.AdvPgConnPkg}}.QueryInfo{Table: {{quote $model.Table.Table}}, Index: {{quote $idx.Name}}}).WithContext(ctx)
+				opt := {{$.AdvPgPkg}}.NewSelectOptions(optFuncs...)
+				db := {{$.AdvPgConnPkg}}.ReplicaByOpt(dao.db, opt, {{quote $model.Table.Table}})
+
 				{{- if $idx.IsUniq }}
-					row := dao.db.QueryRow(ctx, q.SQL(), q.Args()...)
+					row := db.QueryRow(ctx, q.SQL(), q.Args()...)
 					err := row.Scan(q.Results()...)
 
 					return data, err
 				{{- else }}
 
-					rows, err := dao.db.Query(ctx, q.SQL(), q.Args()...)
+					rows, err := db.Query(ctx, q.SQL(), q.Args()...)
 					if err != nil {
 						return nil, err
 					}
@@ -351,6 +359,7 @@ func (*{{$model.RecordType}}) Table() string {
 
 		{{- if $idx.Deleter -}}
 			func (dao {{$model.DAO}}) {{$idx.Deleter}}(ctx context.Context, {{ template "query_method_args" $model.IterateIndexKeys $idx }}) error {
+				ctx = (&{{$.AdvPgConnPkg}}.QueryInfo{Table: {{quote $model.Table.Table}}, Index: {{quote $idx.Name}}}).WithContext(ctx)
 				q := (*{{$model.RecordType}})(nil).query{{$idx.Deleter}}({{ template "query_method_keys" $model.IterateIndexKeys $idx }}){{/* TODO oh shi... refactor deleter queries */}}
 				{{ if and $idx.IsUniq (not $idx.IsMulti) -}}
 					ct, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
@@ -382,6 +391,7 @@ func (model *{{$model.RecordType}}) queryInsert() *{{$.AdvPgPkg}}.SimpleQuery {
 }
 
 func (dao {{$model.DAO}}) Insert(ctx context.Context, data *{{$model.RecordType}}) error {
+	ctx = (&{{$.AdvPgConnPkg}}.QueryInfo{Table: {{quote $model.Table.Table}}}).WithContext(ctx)
 	q := data.queryInsert()
 	{{ if $model.InsertResultColumns -}}
 		err :=dao.db.QueryRow(ctx, q.SQL(), q.Args()...).Scan(q.Results()...)
@@ -422,6 +432,7 @@ func (dao {{$model.DAO}}) Insert(ctx context.Context, data *{{$model.RecordType}
 	}
 
 	func (dao {{$model.DAO}}) FullUpdate(ctx context.Context, data *{{$model.RecordType}}) error {
+		ctx = (&{{$.AdvPgConnPkg}}.QueryInfo{Table: {{quote $model.Table.Table}}}).WithContext(ctx)
 		q := data.queryFullUpdate()
 		{{ if $model.UpdateResultColumns -}}
 			return dao.db.QueryRow(ctx, q.SQL(), q.Args()...).Scan(q.Results()...)
@@ -516,6 +527,7 @@ func (dao {{$model.DAO}}) Insert(ctx context.Context, data *{{$model.RecordType}
 	}
 
 	func (dao {{$model.DAO}}) Update(ctx context.Context, data *{{$model.RecordType}}) error {
+		ctx = (&{{$.AdvPgConnPkg}}.QueryInfo{Table: {{quote $model.Table.Table}}}).WithContext(ctx)
 		q := 
 		{{- if $model.MutatorColumns -}}
 			{{$.AdvPgPkg}}.Query(data.queryUpdate())

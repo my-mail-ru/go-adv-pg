@@ -1,0 +1,6 @@
+host: localhost:5432
+user: testuser
+pass: testpasswd
+base: testdb
+timeout: "10"
+set_statement_timeout: 1

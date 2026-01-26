@@ -22,10 +22,12 @@ import (
 )
 
 const (
-	advPgImport         = `"github.com/my-mail-ru/go-adv-pg"`
-	advPgDefaultPkgName = "advpg"
-	testSuffix          = "_test"
-	generatedSuffix     = "_generated"
+	advPgImport             = `"github.com/my-mail-ru/go-adv-pg"`
+	advPgConnImport         = `"github.com/my-mail-ru/go-adv-pg/conn"`
+	advPgDefaultPkgName     = "advpg"
+	advPgConnDefaultPkgName = "advpgconn"
+	testSuffix              = "_test"
+	generatedSuffix         = "_generated"
 )
 
 func Parse(fsys fs.FS, fname string) (File, error) {
@@ -141,25 +143,37 @@ func (f *File) processImports(fset FileSet, imports []*ast.ImportSpec) error {
 			PkgPath: imp.Path.Value,
 		}
 
-		if imp.Path.Value == advPgImport {
-			if pkgName != "" && pkgName != "_" {
-				f.AdvPgPkg = pkgName
-			} else {
-				f.AdvPgPkg = advPgDefaultPkgName
-			}
-		}
+		setAdvPgImport(&f.AdvPgPkg, imp.Path.Value, pkgName, advPgImport, advPgDefaultPkgName)
+		setAdvPgImport(&f.AdvPgConnPkg, imp.Path.Value, pkgName, advPgConnImport, advPgConnDefaultPkgName)
 	}
 
-	if f.AdvPgPkg == "" { // missing adv-pg import - add it explicitly
-		f.AdvPgPkg = advPgDefaultPkgName
-
-		f.Imports = append(f.Imports, ImportSpec{
-			PkgName: advPgDefaultPkgName,
-			PkgPath: advPgImport,
-		})
-	}
+	f.Imports = appendAdvPgImport(f.Imports, &f.AdvPgPkg, advPgImport, advPgDefaultPkgName)
+	f.Imports = appendAdvPgImport(f.Imports, &f.AdvPgConnPkg, advPgConnImport, advPgConnDefaultPkgName)
 
 	return nil
+}
+
+func setAdvPgImport(name *string, pkg, pkgName, ourPkg, defaultPkgName string) {
+	if pkg == ourPkg {
+		if pkgName != "" && pkgName != "_" {
+			*name = pkgName
+		} else {
+			*name = defaultPkgName
+		}
+	}
+}
+
+func appendAdvPgImport(imports []ImportSpec, name *string, ourPkg, defaultPkgName string) []ImportSpec {
+	if *name != "" {
+		return imports
+	}
+
+	*name = defaultPkgName
+
+	return append(imports, ImportSpec{
+		PkgName: defaultPkgName,
+		PkgPath: ourPkg,
+	})
 }
 
 func (f *File) fillModels(daoInfo DAOInfo) (err error) {
