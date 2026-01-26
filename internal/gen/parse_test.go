@@ -30,10 +30,12 @@ func testFile(models []*advpggen.TableModel, noPkgName ...bool) advpggen.File {
 		DestFileName: "test_generated.go",
 		Package:      "advpggen_test",
 		AdvPgPkg:     "advpg",
+		AdvPgConnPkg: "advpgconn",
 		Directives:   []string{"//foo:bar test"},
 		Imports: []advpggen.ImportSpec{
 			{PkgPath: `"time"`},
 			{PkgName: pkgName, PkgPath: `"github.com/my-mail-ru/go-adv-pg"`},
+			{PkgName: "advpgconn", PkgPath: `"github.com/my-mail-ru/go-adv-pg/conn"`},
 		},
 		Models: models,
 	}

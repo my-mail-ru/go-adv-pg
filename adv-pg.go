@@ -402,3 +402,60 @@ func (qb *QueryBuilder) Args() []any {
 func (qb *QueryBuilder) Results() []any {
 	return qb.results
 }
+
+type SelectOptions struct {
+	limit      int
+	offset     int
+	useReplica bool
+	useMaster  bool
+}
+
+func (so *SelectOptions) Limit() int {
+	return so.limit
+}
+
+func (so *SelectOptions) Offset() int {
+	return so.offset
+}
+
+func (so *SelectOptions) UseReplica() bool {
+	return so.useReplica
+}
+
+func (so *SelectOptions) UseMaster() bool {
+	return so.useMaster
+}
+
+type SelectOptionFunc func(*SelectOptions)
+
+func WithLimit(limit int) SelectOptionFunc {
+	return func(so *SelectOptions) {
+		so.limit = limit
+	}
+}
+
+func WithOffset(offset int) SelectOptionFunc {
+	return func(so *SelectOptions) {
+		so.offset = offset
+	}
+}
+
+func WithReplica(use bool) SelectOptionFunc {
+	return func(so *SelectOptions) {
+		if use {
+			so.useReplica = true
+		} else {
+			so.useMaster = true
+		}
+	}
+}
+
+func NewSelectOptions(optFuncs ...SelectOptionFunc) *SelectOptions {
+	ret := &SelectOptions{}
+
+	for _, optFunc := range optFuncs {
+		optFunc(ret)
+	}
+
+	return ret
+}

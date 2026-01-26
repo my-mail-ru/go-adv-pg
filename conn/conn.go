@@ -11,6 +11,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/onlineconf/onlineconf-go/v2"
+
+	advpg "github.com/my-mail-ru/go-adv-pg"
 )
 
 type Conn struct {
@@ -33,6 +35,30 @@ func (c *Conn) ReplicaPerTable(table string) *pgx.Conn {
 	}
 
 	return c.replica
+}
+
+type replicaConn interface {
+	Replica() *pgx.Conn
+	ReplicaPerTable(table string) *pgx.Conn
+}
+
+var _ replicaConn = &Conn{}
+
+func ReplicaByOpt(db advpg.DB, opt *advpg.SelectOptions, table string) advpg.DB {
+	if opt.UseMaster() {
+		return db
+	}
+
+	repl, ok := db.(replicaConn)
+	if !ok {
+		return db
+	}
+
+	if opt.UseReplica() {
+		return repl.Replica()
+	}
+
+	return repl.ReplicaPerTable(table)
 }
 
 func (c *Conn) OnlineConf() OnlineConf {

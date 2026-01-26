@@ -211,6 +211,16 @@ Mutator methods are:
   - [func \(qb \*QueryBuilder\) Results\(\) \[\]any](<#QueryBuilder.Results>)
   - [func \(qb \*QueryBuilder\) SQL\(\) string](<#QueryBuilder.SQL>)
   - [func \(qb \*QueryBuilder\) SetResults\(res \[\]any\)](<#QueryBuilder.SetResults>)
+- [type SelectOptionFunc](<#SelectOptionFunc>)
+  - [func WithLimit\(limit int\) SelectOptionFunc](<#WithLimit>)
+  - [func WithOffset\(offset int\) SelectOptionFunc](<#WithOffset>)
+  - [func WithReplica\(use bool\) SelectOptionFunc](<#WithReplica>)
+- [type SelectOptions](<#SelectOptions>)
+  - [func NewSelectOptions\(optFuncs ...SelectOptionFunc\) \*SelectOptions](<#NewSelectOptions>)
+  - [func \(so \*SelectOptions\) Limit\(\) int](<#SelectOptions.Limit>)
+  - [func \(so \*SelectOptions\) Offset\(\) int](<#SelectOptions.Offset>)
+  - [func \(so \*SelectOptions\) UseMaster\(\) bool](<#SelectOptions.UseMaster>)
+  - [func \(so \*SelectOptions\) UseReplica\(\) bool](<#SelectOptions.UseReplica>)
 - [type SimpleQuery](<#SimpleQuery>)
   - [func NewSimpleQuery\(sql string, args, results \[\]any\) \*SimpleQuery](<#NewSimpleQuery>)
   - [func \(q \*SimpleQuery\) Args\(\) \[\]any](<#SimpleQuery.Args>)
@@ -537,6 +547,98 @@ func (qb *QueryBuilder) SetResults(res []any)
 
 
 
+<a name="SelectOptionFunc"></a>
+## type [SelectOptionFunc](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L429>)
+
+
+
+```go
+type SelectOptionFunc func(*SelectOptions)
+```
+
+<a name="WithLimit"></a>
+### func [WithLimit](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L431>)
+
+```go
+func WithLimit(limit int) SelectOptionFunc
+```
+
+
+
+<a name="WithOffset"></a>
+### func [WithOffset](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L437>)
+
+```go
+func WithOffset(offset int) SelectOptionFunc
+```
+
+
+
+<a name="WithReplica"></a>
+### func [WithReplica](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L443>)
+
+```go
+func WithReplica(use bool) SelectOptionFunc
+```
+
+
+
+<a name="SelectOptions"></a>
+## type [SelectOptions](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L406-L411>)
+
+
+
+```go
+type SelectOptions struct {
+    // contains filtered or unexported fields
+}
+```
+
+<a name="NewSelectOptions"></a>
+### func [NewSelectOptions](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L453>)
+
+```go
+func NewSelectOptions(optFuncs ...SelectOptionFunc) *SelectOptions
+```
+
+
+
+<a name="SelectOptions.Limit"></a>
+### func \(\*SelectOptions\) [Limit](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L413>)
+
+```go
+func (so *SelectOptions) Limit() int
+```
+
+
+
+<a name="SelectOptions.Offset"></a>
+### func \(\*SelectOptions\) [Offset](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L417>)
+
+```go
+func (so *SelectOptions) Offset() int
+```
+
+
+
+<a name="SelectOptions.UseMaster"></a>
+### func \(\*SelectOptions\) [UseMaster](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L425>)
+
+```go
+func (so *SelectOptions) UseMaster() bool
+```
+
+
+
+<a name="SelectOptions.UseReplica"></a>
+### func \(\*SelectOptions\) [UseReplica](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L421>)
+
+```go
+func (so *SelectOptions) UseReplica() bool
+```
+
+
+
 <a name="SimpleQuery"></a>
 ## type [SimpleQuery](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L316-L320>)
 
@@ -720,6 +822,7 @@ import "github.com/my-mail-ru/go-adv-pg/conn"
 - [Constants](<#constants>)
 - [func LoadConnConfigs\(config OnlineConf\) \(masterConf, replicaConf \*pgx.ConnConfig, err error\)](<#LoadConnConfigs>)
 - [func LoadPoolConfigs\(config OnlineConf\) \(masterConf, replicaConf \*pgxpool.Config, err error\)](<#LoadPoolConfigs>)
+- [func ReplicaByOpt\(db advpg.DB, opt \*advpg.SelectOptions, table string\) advpg.DB](<#ReplicaByOpt>)
 - [type Conn](<#Conn>)
   - [func NewConn\(ctx context.Context, config OnlineConf\) \(\*Conn, error\)](<#NewConn>)
   - [func \(c \*Conn\) OnlineConf\(\) OnlineConf](<#Conn.OnlineConf>)
@@ -771,8 +874,17 @@ func LoadPoolConfigs(config OnlineConf) (masterConf, replicaConf *pgxpool.Config
 
 
 
+<a name="ReplicaByOpt"></a>
+## func [ReplicaByOpt](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L47>)
+
+```go
+func ReplicaByOpt(db advpg.DB, opt *advpg.SelectOptions, table string) advpg.DB
+```
+
+
+
 <a name="Conn"></a>
-## type [Conn](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L16-L20>)
+## type [Conn](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L18-L22>)
 
 
 
@@ -784,7 +896,7 @@ type Conn struct {
 ```
 
 <a name="NewConn"></a>
-### func [NewConn](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L42>)
+### func [NewConn](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L68>)
 
 ```go
 func NewConn(ctx context.Context, config OnlineConf) (*Conn, error)
@@ -793,7 +905,7 @@ func NewConn(ctx context.Context, config OnlineConf) (*Conn, error)
 
 
 <a name="Conn.OnlineConf"></a>
-### func \(\*Conn\) [OnlineConf](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L38>)
+### func \(\*Conn\) [OnlineConf](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L64>)
 
 ```go
 func (c *Conn) OnlineConf() OnlineConf
@@ -802,7 +914,7 @@ func (c *Conn) OnlineConf() OnlineConf
 
 
 <a name="Conn.Replica"></a>
-### func \(\*Conn\) [Replica](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L22>)
+### func \(\*Conn\) [Replica](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L24>)
 
 ```go
 func (c *Conn) Replica() *pgx.Conn
@@ -811,7 +923,7 @@ func (c *Conn) Replica() *pgx.Conn
 
 
 <a name="Conn.ReplicaPerTable"></a>
-### func \(\*Conn\) [ReplicaPerTable](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L30>)
+### func \(\*Conn\) [ReplicaPerTable](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L32>)
 
 ```go
 func (c *Conn) ReplicaPerTable(table string) *pgx.Conn
@@ -835,7 +947,7 @@ type OnlineConf interface {
 ```
 
 <a name="Pool"></a>
-## type [Pool](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L64-L68>)
+## type [Pool](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L90-L94>)
 
 
 
@@ -847,7 +959,7 @@ type Pool struct {
 ```
 
 <a name="NewPool"></a>
-### func [NewPool](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L82>)
+### func [NewPool](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L108>)
 
 ```go
 func NewPool(ctx context.Context, config OnlineConf) (*Pool, error)
@@ -856,7 +968,7 @@ func NewPool(ctx context.Context, config OnlineConf) (*Pool, error)
 
 
 <a name="Pool.OnlineConf"></a>
-### func \(\*Pool\) [OnlineConf](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L78>)
+### func \(\*Pool\) [OnlineConf](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L104>)
 
 ```go
 func (p *Pool) OnlineConf() OnlineConf
@@ -865,7 +977,7 @@ func (p *Pool) OnlineConf() OnlineConf
 
 
 <a name="Pool.Replica"></a>
-### func \(\*Pool\) [Replica](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L70>)
+### func \(\*Pool\) [Replica](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L96>)
 
 ```go
 func (p *Pool) Replica() *pgxpool.Pool

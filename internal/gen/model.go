@@ -9,6 +9,7 @@ type File struct {
 	Directives   []string
 	Package      string
 	AdvPgPkg     string
+	AdvPgConnPkg string
 	Imports      []ImportSpec
 	Models       []*TableModel
 	ModelsByName map[string]*TableModel

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	advpg "github.com/my-mail-ru/go-adv-pg"
+	advpgconn "github.com/my-mail-ru/go-adv-pg/conn"
 )
 
 //// User ////
@@ -107,16 +108,20 @@ func (model *UserRecord) queryDeleteByID(inID int) *advpg.SimpleQuery {
 	)
 }
 
-func (dao UserDAO) SelectByID(ctx context.Context, inID int) (UserRecord, error) {
+func (dao UserDAO) SelectByID(ctx context.Context, inID int, optFuncs ...advpg.SelectOptionFunc) (UserRecord, error) {
 	var data UserRecord
 	q := data.querySelectByID(inID)
-	row := dao.db.QueryRow(ctx, q.SQL(), q.Args()...)
+	ctx = (&advpgconn.QueryInfo{Table: "users", Index: "ID"}).WithContext(ctx)
+	opt := advpg.NewSelectOptions(optFuncs...)
+	db := advpgconn.ReplicaByOpt(dao.db, opt, "users")
+	row := db.QueryRow(ctx, q.SQL(), q.Args()...)
 	err := row.Scan(q.Results()...)
 
 	return data, err
 }
 
 func (dao UserDAO) DeleteByID(ctx context.Context, inID int) error {
+	ctx = (&advpgconn.QueryInfo{Table: "users", Index: "ID"}).WithContext(ctx)
 	q := (*UserRecord)(nil).queryDeleteByID(inID)
 	ct, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
 	if err != nil {
@@ -192,11 +197,14 @@ func (model *UserRecord) queryDeleteMultiByIDType(keys []SelectMultiByIDTypeKey)
 	return q
 }
 
-func (dao UserDAO) SelectMultiByIDType(ctx context.Context, keys []SelectMultiByIDTypeKey) ([]UserRecord, error) {
+func (dao UserDAO) SelectMultiByIDType(ctx context.Context, keys []SelectMultiByIDTypeKey, optFuncs ...advpg.SelectOptionFunc) ([]UserRecord, error) {
 	var data UserRecord
 	q := data.querySelectMultiByIDType(keys)
+	ctx = (&advpgconn.QueryInfo{Table: "users", Index: "IDType"}).WithContext(ctx)
+	opt := advpg.NewSelectOptions(optFuncs...)
+	db := advpgconn.ReplicaByOpt(dao.db, opt, "users")
 
-	rows, err := dao.db.Query(ctx, q.SQL(), q.Args()...)
+	rows, err := db.Query(ctx, q.SQL(), q.Args()...)
 	if err != nil {
 		return nil, err
 	}
@@ -221,6 +229,7 @@ func (dao UserDAO) SelectMultiByIDType(ctx context.Context, keys []SelectMultiBy
 }
 
 func (dao UserDAO) DeleteMultiByIDType(ctx context.Context, keys []SelectMultiByIDTypeKey) error {
+	ctx = (&advpgconn.QueryInfo{Table: "users", Index: "IDType"}).WithContext(ctx)
 	q := (*UserRecord)(nil).queryDeleteMultiByIDType(keys)
 	_, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
 	return err
@@ -242,11 +251,14 @@ func (model *UserRecord) queryDeleteByName(inName string) *advpg.SimpleQuery {
 	)
 }
 
-func (dao UserDAO) SelectByName(ctx context.Context, inName string) ([]UserRecord, error) {
+func (dao UserDAO) SelectByName(ctx context.Context, inName string, optFuncs ...advpg.SelectOptionFunc) ([]UserRecord, error) {
 	var data UserRecord
 	q := data.querySelectByName(inName)
+	ctx = (&advpgconn.QueryInfo{Table: "users", Index: "Name"}).WithContext(ctx)
+	opt := advpg.NewSelectOptions(optFuncs...)
+	db := advpgconn.ReplicaByOpt(dao.db, opt, "users")
 
-	rows, err := dao.db.Query(ctx, q.SQL(), q.Args()...)
+	rows, err := db.Query(ctx, q.SQL(), q.Args()...)
 	if err != nil {
 		return nil, err
 	}
@@ -271,6 +283,7 @@ func (dao UserDAO) SelectByName(ctx context.Context, inName string) ([]UserRecor
 }
 
 func (dao UserDAO) DeleteByName(ctx context.Context, inName string) error {
+	ctx = (&advpgconn.QueryInfo{Table: "users", Index: "Name"}).WithContext(ctx)
 	q := (*UserRecord)(nil).queryDeleteByName(inName)
 	_, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
 	return err
@@ -285,6 +298,7 @@ func (model *UserRecord) queryInsert() *advpg.SimpleQuery {
 }
 
 func (dao UserDAO) Insert(ctx context.Context, data *UserRecord) error {
+	ctx = (&advpgconn.QueryInfo{Table: "users"}).WithContext(ctx)
 	q := data.queryInsert()
 	err := dao.db.QueryRow(ctx, q.SQL(), q.Args()...).Scan(q.Results()...)
 
@@ -300,6 +314,7 @@ func (model *UserRecord) queryFullUpdate() *advpg.SimpleQuery {
 }
 
 func (dao UserDAO) FullUpdate(ctx context.Context, data *UserRecord) error {
+	ctx = (&advpgconn.QueryInfo{Table: "users"}).WithContext(ctx)
 	q := data.queryFullUpdate()
 	return dao.db.QueryRow(ctx, q.SQL(), q.Args()...).Scan(q.Results()...)
 }
@@ -361,6 +376,7 @@ func (model *UserRecord) reset() {
 }
 
 func (dao UserDAO) Update(ctx context.Context, data *UserRecord) error {
+	ctx = (&advpgconn.QueryInfo{Table: "users"}).WithContext(ctx)
 	q := advpg.Query(data.queryUpdate())
 	query := q.SQL()
 	if query == "" {
@@ -473,16 +489,20 @@ func (model *ExtLinkRecord) queryDeleteByPrimaryKey(inUserID int, inExternalID i
 	)
 }
 
-func (dao ExtLinkDAO) SelectByPrimaryKey(ctx context.Context, inUserID int, inExternalID int) (ExtLinkRecord, error) {
+func (dao ExtLinkDAO) SelectByPrimaryKey(ctx context.Context, inUserID int, inExternalID int, optFuncs ...advpg.SelectOptionFunc) (ExtLinkRecord, error) {
 	var data ExtLinkRecord
 	q := data.querySelectByPrimaryKey(inUserID, inExternalID)
-	row := dao.db.QueryRow(ctx, q.SQL(), q.Args()...)
+	ctx = (&advpgconn.QueryInfo{Table: "ext_links", Index: "PrimaryKey"}).WithContext(ctx)
+	opt := advpg.NewSelectOptions(optFuncs...)
+	db := advpgconn.ReplicaByOpt(dao.db, opt, "ext_links")
+	row := db.QueryRow(ctx, q.SQL(), q.Args()...)
 	err := row.Scan(q.Results()...)
 
 	return data, err
 }
 
 func (dao ExtLinkDAO) DeleteByPrimaryKey(ctx context.Context, inUserID int, inExternalID int) error {
+	ctx = (&advpgconn.QueryInfo{Table: "ext_links", Index: "PrimaryKey"}).WithContext(ctx)
 	q := (*ExtLinkRecord)(nil).queryDeleteByPrimaryKey(inUserID, inExternalID)
 	ct, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
 	if err != nil {
@@ -512,11 +532,14 @@ func (model *ExtLinkRecord) queryDeleteMultiByStatus(inStatuses []int) *advpg.Si
 	)
 }
 
-func (dao ExtLinkDAO) SelectMultiByStatus(ctx context.Context, inStatuses []int) ([]ExtLinkRecord, error) {
+func (dao ExtLinkDAO) SelectMultiByStatus(ctx context.Context, inStatuses []int, optFuncs ...advpg.SelectOptionFunc) ([]ExtLinkRecord, error) {
 	var data ExtLinkRecord
 	q := data.querySelectMultiByStatus(inStatuses)
+	ctx = (&advpgconn.QueryInfo{Table: "ext_links", Index: "Status"}).WithContext(ctx)
+	opt := advpg.NewSelectOptions(optFuncs...)
+	db := advpgconn.ReplicaByOpt(dao.db, opt, "ext_links")
 
-	rows, err := dao.db.Query(ctx, q.SQL(), q.Args()...)
+	rows, err := db.Query(ctx, q.SQL(), q.Args()...)
 	if err != nil {
 		return nil, err
 	}
@@ -541,6 +564,7 @@ func (dao ExtLinkDAO) SelectMultiByStatus(ctx context.Context, inStatuses []int)
 }
 
 func (dao ExtLinkDAO) DeleteMultiByStatus(ctx context.Context, inStatuses []int) error {
+	ctx = (&advpgconn.QueryInfo{Table: "ext_links", Index: "Status"}).WithContext(ctx)
 	q := (*ExtLinkRecord)(nil).queryDeleteMultiByStatus(inStatuses)
 	_, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
 	return err
@@ -555,6 +579,7 @@ func (model *ExtLinkRecord) queryInsert() *advpg.SimpleQuery {
 }
 
 func (dao ExtLinkDAO) Insert(ctx context.Context, data *ExtLinkRecord) error {
+	ctx = (&advpgconn.QueryInfo{Table: "ext_links"}).WithContext(ctx)
 	q := data.queryInsert()
 	err := dao.db.QueryRow(ctx, q.SQL(), q.Args()...).Scan(q.Results()...)
 
@@ -570,6 +595,7 @@ func (model *ExtLinkRecord) queryFullUpdate() *advpg.SimpleQuery {
 }
 
 func (dao ExtLinkDAO) FullUpdate(ctx context.Context, data *ExtLinkRecord) error {
+	ctx = (&advpgconn.QueryInfo{Table: "ext_links"}).WithContext(ctx)
 	q := data.queryFullUpdate()
 	return dao.db.QueryRow(ctx, q.SQL(), q.Args()...).Scan(q.Results()...)
 }
@@ -625,6 +651,7 @@ func (model *ExtLinkRecord) reset() {
 }
 
 func (dao ExtLinkDAO) Update(ctx context.Context, data *ExtLinkRecord) error {
+	ctx = (&advpgconn.QueryInfo{Table: "ext_links"}).WithContext(ctx)
 	q := advpg.Query(data.queryUpdate())
 	query := q.SQL()
 	if query == "" {
@@ -710,16 +737,20 @@ func (model *UserViewsRecord) queryDeleteByUserID(inUserID int) *advpg.SimpleQue
 	)
 }
 
-func (dao UserViewsDAO) SelectByUserID(ctx context.Context, inUserID int) (UserViewsRecord, error) {
+func (dao UserViewsDAO) SelectByUserID(ctx context.Context, inUserID int, optFuncs ...advpg.SelectOptionFunc) (UserViewsRecord, error) {
 	var data UserViewsRecord
 	q := data.querySelectByUserID(inUserID)
-	row := dao.db.QueryRow(ctx, q.SQL(), q.Args()...)
+	ctx = (&advpgconn.QueryInfo{Table: "user_views", Index: "UserID"}).WithContext(ctx)
+	opt := advpg.NewSelectOptions(optFuncs...)
+	db := advpgconn.ReplicaByOpt(dao.db, opt, "user_views")
+	row := db.QueryRow(ctx, q.SQL(), q.Args()...)
 	err := row.Scan(q.Results()...)
 
 	return data, err
 }
 
 func (dao UserViewsDAO) DeleteByUserID(ctx context.Context, inUserID int) error {
+	ctx = (&advpgconn.QueryInfo{Table: "user_views", Index: "UserID"}).WithContext(ctx)
 	q := (*UserViewsRecord)(nil).queryDeleteByUserID(inUserID)
 	ct, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
 	if err != nil {
@@ -742,6 +773,7 @@ func (model *UserViewsRecord) queryInsert() *advpg.SimpleQuery {
 }
 
 func (dao UserViewsDAO) Insert(ctx context.Context, data *UserViewsRecord) error {
+	ctx = (&advpgconn.QueryInfo{Table: "user_views"}).WithContext(ctx)
 	q := data.queryInsert()
 	err := dao.db.QueryRow(ctx, q.SQL(), q.Args()...).Scan(q.Results()...)
 
@@ -786,6 +818,7 @@ func (model *UserViewsRecord) reset() {
 }
 
 func (dao UserViewsDAO) Update(ctx context.Context, data *UserViewsRecord) error {
+	ctx = (&advpgconn.QueryInfo{Table: "user_views"}).WithContext(ctx)
 	q := advpg.Query(data.queryUpdate())
 	query := q.SQL()
 	if query == "" {
@@ -863,16 +896,20 @@ func (model *SeenRecord) queryDeleteByUserID(inUserID int) *advpg.SimpleQuery {
 	)
 }
 
-func (dao SeenDAO) SelectByUserID(ctx context.Context, inUserID int) (SeenRecord, error) {
+func (dao SeenDAO) SelectByUserID(ctx context.Context, inUserID int, optFuncs ...advpg.SelectOptionFunc) (SeenRecord, error) {
 	var data SeenRecord
 	q := data.querySelectByUserID(inUserID)
-	row := dao.db.QueryRow(ctx, q.SQL(), q.Args()...)
+	ctx = (&advpgconn.QueryInfo{Table: "seen", Index: "UserID"}).WithContext(ctx)
+	opt := advpg.NewSelectOptions(optFuncs...)
+	db := advpgconn.ReplicaByOpt(dao.db, opt, "seen")
+	row := db.QueryRow(ctx, q.SQL(), q.Args()...)
 	err := row.Scan(q.Results()...)
 
 	return data, err
 }
 
 func (dao SeenDAO) DeleteByUserID(ctx context.Context, inUserID int) error {
+	ctx = (&advpgconn.QueryInfo{Table: "seen", Index: "UserID"}).WithContext(ctx)
 	q := (*SeenRecord)(nil).queryDeleteByUserID(inUserID)
 	ct, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
 	if err != nil {
@@ -895,6 +932,7 @@ func (model *SeenRecord) queryInsert() *advpg.SimpleQuery {
 }
 
 func (dao SeenDAO) Insert(ctx context.Context, data *SeenRecord) error {
+	ctx = (&advpgconn.QueryInfo{Table: "seen"}).WithContext(ctx)
 	q := data.queryInsert()
 	err := dao.db.QueryRow(ctx, q.SQL(), q.Args()...).Scan(q.Results()...)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -913,6 +951,7 @@ func (model *SeenRecord) queryFullUpdate() *advpg.SimpleQuery {
 }
 
 func (dao SeenDAO) FullUpdate(ctx context.Context, data *SeenRecord) error {
+	ctx = (&advpgconn.QueryInfo{Table: "seen"}).WithContext(ctx)
 	q := data.queryFullUpdate()
 	ct, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
 	if err != nil {
@@ -953,6 +992,7 @@ func (model *SeenRecord) reset() {
 }
 
 func (dao SeenDAO) Update(ctx context.Context, data *SeenRecord) error {
+	ctx = (&advpgconn.QueryInfo{Table: "seen"}).WithContext(ctx)
 	q := data.queryUpdate()
 	query := q.SQL()
 	if query == "" {
