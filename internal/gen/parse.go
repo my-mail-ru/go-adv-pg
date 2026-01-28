@@ -284,6 +284,10 @@ func (tm *TableModel) linkIndicesToColumns() error {
 		}
 
 		tm.Indices[i] = idx
+
+		if idx.IsPrimaryKey {
+			tm.PrimaryKeyIndex = &tm.Indices[i]
+		}
 	}
 
 	return nil

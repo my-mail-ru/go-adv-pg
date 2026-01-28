@@ -12,7 +12,7 @@ The typical configuration layout is:
 
 The [OnlineConf] interface assumes the [github.com/onlineconf/onlineconf-go/v2] llibrary, but you may use any compatible implementation (or test mock).
 
-Connection and pool settings are compatible with a Perl implementation. Durations can be specified as integer seconds
+Connection and pool settings are compatible with the Perl implementation. Durations can be specified as integer seconds
 or [time.Duration] syntax (which obviously isn't compatible with Perl).
 
 # Connection settings

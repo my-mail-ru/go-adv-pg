@@ -294,6 +294,7 @@ func TestParse(t *testing.T) {
 				colUpdatedAt(&NoActiveRecordTable.Fields[1], false),
 				colDescr(&NoActiveRecordTable.Fields[2], false),
 			},
+			PrimaryKeyIndex: &NoActiveRecordTable.Indices[0],
 			PrimaryKeyColumns: []*advpggen.Column{
 				colID,
 			},
@@ -365,6 +366,7 @@ func TestParse(t *testing.T) {
 				colID,
 				colTypePK,
 			},
+			PrimaryKeyIndex: &PrimaryKeyOnlyTable.Indices[0],
 			PrimaryKeyColumns: []*advpggen.Column{
 				colID,
 				colTypePK,
@@ -394,6 +396,7 @@ func TestParse(t *testing.T) {
 			Columns: []*advpggen.Column{
 				colID,
 			},
+			PrimaryKeyIndex: &UpdateOnConflictWithoutValueColumnsTable.Indices[0],
 			PrimaryKeyColumns: []*advpggen.Column{
 				colID,
 			},
@@ -411,6 +414,7 @@ func TestParse(t *testing.T) {
 				colID,
 				colTypePK,
 			},
+			PrimaryKeyIndex: &NoMethodsTable.Indices[0],
 			PrimaryKeyColumns: []*advpggen.Column{
 				colID,
 				colTypePK,
@@ -434,6 +438,7 @@ func TestParse(t *testing.T) {
 			Columns: []*advpggen.Column{
 				colARID,
 			},
+			PrimaryKeyIndex: &ActiveRecordWithoutValueColumnsTable.Indices[0],
 			PrimaryKeyColumns: []*advpggen.Column{
 				colARID,
 			},
@@ -460,6 +465,7 @@ func TestParse(t *testing.T) {
 				colDescr(&ActiveRecordEnabledTable.Fields[2], true),
 				colCounter,
 			},
+			PrimaryKeyIndex: &ActiveRecordEnabledTable.Indices[0],
 			PrimaryKeyColumns: []*advpggen.Column{
 				colARID,
 			},

@@ -427,7 +427,7 @@ func (so *SelectOptions) UseMaster() bool {
 	return so.useMaster
 }
 
-// SelectOptionFunc represent options of Select query methods.
+// SelectOptionFunc represents options of Select query methods.
 type SelectOptionFunc func(*SelectOptions)
 
 // WithLimit overrides the DefaultLimit specified for an [Index].

@@ -9,9 +9,12 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/multitracer"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/onlineconf/onlineconf-go/v2"
 
+	"github.com/my-mail-ru/go-adv-metrics/pgxmetrics"
+	advmetricsset "github.com/my-mail-ru/go-adv-metrics/set"
 	advpg "github.com/my-mail-ru/go-adv-pg"
 )
 
@@ -49,14 +52,40 @@ func (c *Conn) OnlineConf() OnlineConf {
 	return c.config
 }
 
+// ConnOptionFunc represents options for the [NewConn].
+// Any user-defined function accepting a pointer to the [pgx.ConnConfig] can be used as an option.
+type ConnOptionFunc func(*pgx.ConnConfig)
+
+// WithConnTracers attaches custom tracers to the connection config.
+func WithConnTracers(tracers ...pgx.QueryTracer) ConnOptionFunc {
+	return func(conf *pgx.ConnConfig) {
+		conf.Tracer = multitracer.New(append(tracers, conf.Tracer)...)
+	}
+}
+
+// WithConnMetrics enables collection of the query and connection metrics.
+//
+// For detailed description of these metrics, see [pgxmetrics.Tracer].
+func WithConnMetrics(ms advmetricsset.Set) ConnOptionFunc {
+	return WithConnTracers(pgxmetrics.New(ms))
+}
+
 // NewConn creates the master and optionally the replica(s) connection(s).
 //
-// Use single connections for one-shot cron jobs, cli tools, etc.
+// Use single connections for one-shot cron jobs, CLI tools, etc.
 // For high-availability workload like web servers, use [NewPool].
-func NewConn(ctx context.Context, config OnlineConf) (*Conn, error) {
+func NewConn(ctx context.Context, config OnlineConf, optFuncs ...ConnOptionFunc) (*Conn, error) {
 	masterConf, replicaConf, err := LoadConnConfigs(config)
 	if err != nil {
 		return nil, err
+	}
+
+	for _, optFunc := range optFuncs {
+		optFunc(masterConf)
+
+		if replicaConf != nil {
+			optFunc(replicaConf)
+		}
 	}
 
 	ret := &Conn{
@@ -109,14 +138,40 @@ func (p *Pool) OnlineConf() OnlineConf {
 	return p.config
 }
 
+// PoolOptionFunc represents options for the [NewPool].
+// Any user-defined function accepting a pointer to the [pgxpool.Config] can be used as an option.
+type PoolOptionFunc func(*pgxpool.Config)
+
+// WithPoolTracers attaches custom tracers to the connection pool config.
+func WithPoolTracers(tracers ...pgx.QueryTracer) PoolOptionFunc {
+	return func(conf *pgxpool.Config) {
+		conf.ConnConfig.Tracer = multitracer.New(append(tracers, conf.ConnConfig.Tracer)...)
+	}
+}
+
+// WithPoolMetrics enables collection of the query, connection, and pool metrics.
+//
+// For detailed description of these metrics, see [pgxmetrics.Tracer].
+func WithPoolMetrics(ms advmetricsset.Set) PoolOptionFunc {
+	return WithPoolTracers(pgxmetrics.New(ms))
+}
+
 // NewPool creates the master and optionally the replica(s) connection pool(s).
 //
 // Use pooled connections for high-availability workloads like web servers.
-// For short-living tasks like one-shot cron jobs and cli tools, use [NewConn].
-func NewPool(ctx context.Context, config OnlineConf) (*Pool, error) {
+// For short-living tasks like one-shot cron jobs and CLI tools, use [NewConn].
+func NewPool(ctx context.Context, config OnlineConf, optFuncs ...PoolOptionFunc) (*Pool, error) {
 	masterConf, replicaConf, err := LoadPoolConfigs(config)
 	if err != nil {
 		return nil, err
+	}
+
+	for _, optFunc := range optFuncs {
+		optFunc(masterConf)
+
+		if replicaConf != nil {
+			optFunc(replicaConf)
+		}
 	}
 
 	ret := &Pool{
@@ -160,7 +215,7 @@ func (tt *timeoutTracer) loadTimeout() time.Duration {
 }
 
 func (tt *timeoutTracer) loadTableTimeout(ctx context.Context) time.Duration {
-	if qi := QueryInfoFromContext(ctx); qi != nil {
+	if qi := pgxmetrics.QueryInfoFromContext(ctx); qi != nil {
 		timeout, err := tt.config.GetDurationErr(path.Join("/table", qi.Table, "timeout"))
 		if err == nil {
 			return timeout
@@ -217,4 +272,11 @@ func ReplicaByOpt(db advpg.DB, opt *advpg.SelectOptions, table string) advpg.DB 
 	}
 
 	return repl.ReplicaPerTable(table)
+}
+
+func QueryInfoCtx(ctx context.Context, table, index string) context.Context {
+	return (&pgxmetrics.QueryInfo{
+		Table: table,
+		Index: index,
+	}).WithContext(ctx)
 }

@@ -42,7 +42,9 @@ var _ = advpg.Table{
 }
 
 func main() {
-    // db is [pgx.Conn] or [pgxpool.Pool]
+    db, err := advpgconn.NewPool(oconf.Subtree("/project/db")) // or NewConn
+    // ...
+    // db can also be [pgx.Conn], [pgxpool.Pool], or any type implementing [advpg.DB]
 
     dao := NewUserViewsDAO(db)
 
