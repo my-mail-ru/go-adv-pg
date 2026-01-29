@@ -1,6 +1,22 @@
 /*
 Package advpg - the code-first SQL query generator with [ActiveRecord] support.
 
+# Features
+
+  - Maps a value of a Go struct type to the PostgreSQL database table record.
+  - Generates `SELECT`, `INSERT`, `UPDATE`, and `DELETE` queries and corresponding Data Access Object (DAO).
+    methods for single- or multiple-valued keys.
+  - Multiple keys can be specified for `SELECT` and `DELETE` queries (`IsMulti`).
+  - Raw SQL snippets can be specified to customize data storage or retrieval (`SQLScan` and `SQLValue`).
+  - Returning `DEFAULT` values from a table schema during `INSERT` (`InitByStorage`).
+  - Returning a value set by a `BEFORE UPDATE` trigger during `UPDATE` (`UpdateByStorage`).
+  - Update an existing record if a unique constraint (like a primary key) conflict occurs, aka "UPSERT" (`UpdateOnConflict`).
+  - Ignore unique constraint conflict (`OnConflictDoNothing`).
+  - [ActiveRecord]: generate Getter and Setter methods for all applicable fields, "smart" `UPDATE` that updates only the
+    fields that are really changed.
+  - [Mutators]: implement concurrency-safe counters in a table.
+  - [github.com/my-mail-ru/go-adv-pg/conn]: Configuration and initialization of database connections and connection pools using the [OnlineConf].
+
 # Simplified workflow
 
 1. Add [github.com/my-mail-ru/go-adv-pg/cmd/adv-pg] tool for your project:
@@ -50,7 +66,7 @@ generation of the following entities:
   - Query constants (sqlSelect..., sqlInsert... and so on) containing SQL query parts,
   - The Record type named ${Model}Record, if the [ActiveRecord] isn't disabled,
   - Accessor methods: Getters for every column, and Setters for every updatable column, and
-    Mutators, if the [ActiveRecord] isn't disabled.
+    [Mutators], if the [ActiveRecord] isn't disabled.
     The receiver type for these methods is the Record type,
   - Query methods (querySelect..., queryInsert and so on) that return the type implementing the [Query] interface. The receiver type for these
     methods is the Record type (or the ${Model} itself if the [ActiveRecord] is disabled),
@@ -75,7 +91,7 @@ an object instance in memory to a database table record. This project treats Act
   - The Update database access method updates only the fields that were changed since
     the previous Select, Insert or Update operation. If no fields were changed, the Update
     operation is omitted,
-  - Mutators can be used to implement concurrency-safe counters in a table.
+  - [Mutators] can be used to implement concurrency-safe counters in a table.
 
 When the ActiveRecord is disabled (DisableActiveRecord in a [Table] definition), no Update or accessor
 methods are generated, but you can access the object fields directly (no additional Record type is generated).
@@ -242,6 +258,8 @@ Mutator methods are:
 [Delete]: https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-Delete
 [Insert]: https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-Insert
 [Update]: https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-Update
+[Mutators]: https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-Mutators
+[OnlineConf]: https://github.com/onlineconf/onlineconf
 */
 package advpg
 

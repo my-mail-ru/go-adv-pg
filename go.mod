@@ -1,17 +1,19 @@
 module github.com/my-mail-ru/go-adv-pg
 
-go 1.24.3
+go 1.25
 
 require (
 	github.com/ettle/strcase v0.2.0
 	github.com/gertd/go-pluralize v0.2.1
 	github.com/google/go-cmp v0.7.0
 	github.com/jackc/pgx/v5 v5.8.0
+	github.com/my-mail-ru/go-adv-metrics v0.0.3
 	github.com/onlineconf/onlineconf-go/v2 v2.0.1
 	golang.org/x/tools v0.41.0
 )
 
 require (
+	github.com/VictoriaMetrics/metrics v1.40.2 // indirect
 	github.com/colinmarc/cdb v0.0.0-20190223170904-60f317823f70 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
@@ -21,7 +23,9 @@ require (
 	github.com/my-mail-ru/exp/mmap v0.0.1 // indirect
 	github.com/onlineconf/yaml2cdb v0.0.0-20250620150341-d71dc95cd7f8 // indirect
 	github.com/rogpeppe/go-internal v1.14.1 // indirect
-	golang.org/x/crypto v0.38.0 // indirect
+	github.com/valyala/fastrand v1.1.0 // indirect
+	github.com/valyala/histogram v1.2.0 // indirect
+	golang.org/x/crypto v0.47.0 // indirect
 	golang.org/x/mod v0.32.0 // indirect
 	golang.org/x/sync v0.19.0 // indirect
 	golang.org/x/sys v0.40.0 // indirect

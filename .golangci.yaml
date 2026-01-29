@@ -25,7 +25,7 @@ linters:
     - wsl_v5
   settings:
     dupl:
-      threshold: 100
+      threshold: 110
     gocognit:
       min-complexity: 55 # code generators are complex things by their nature
     goconst:

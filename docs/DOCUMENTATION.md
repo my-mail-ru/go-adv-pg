@@ -557,7 +557,7 @@ func (qb *QueryBuilder) SetResults(res []any)
 <a name="SelectOptionFunc"></a>
 ## type [SelectOptionFunc](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L431>)
 
-SelectOptionFunc represent options of Select query methods.
+SelectOptionFunc represents options of Select query methods.
 
 ```go
 type SelectOptionFunc func(*SelectOptions)
@@ -844,7 +844,7 @@ pool, err := advpgconn.NewPool(ctx, dbSubtree) // uses /project/db/base and so o
 
 The [OnlineConf](<#OnlineConf>) interface assumes the [github.com/onlineconf/onlineconf\\\-go/v2](<https://pkg.go.dev/github.com/onlineconf/onlineconf-go/v2/>) llibrary, but you may use any compatible implementation \(or test mock\).
 
-Connection and pool settings are compatible with a Perl implementation. Durations can be specified as integer seconds or [time.Duration](<https://pkg.go.dev/time/#Duration>) syntax \(which obviously isn't compatible with Perl\).
+Connection and pool settings are compatible with the Perl implementation. Durations can be specified as integer seconds or [time.Duration](<https://pkg.go.dev/time/#Duration>) syntax \(which obviously isn't compatible with Perl\).
 
 ### Connection settings
 
@@ -898,21 +898,25 @@ Per\-table settings are checked on\-the\-fly, so no application restart is requi
 - [Constants](<#constants>)
 - [func LoadConnConfigs\(config OnlineConf\) \(masterConf, replicaConf \*pgx.ConnConfig, err error\)](<#LoadConnConfigs>)
 - [func LoadPoolConfigs\(config OnlineConf\) \(masterConf, replicaConf \*pgxpool.Config, err error\)](<#LoadPoolConfigs>)
+- [func QueryInfoCtx\(ctx context.Context, table, index string\) context.Context](<#QueryInfoCtx>)
 - [func ReplicaByOpt\(db advpg.DB, opt \*advpg.SelectOptions, table string\) advpg.DB](<#ReplicaByOpt>)
 - [type Conn](<#Conn>)
-  - [func NewConn\(ctx context.Context, config OnlineConf\) \(\*Conn, error\)](<#NewConn>)
+  - [func NewConn\(ctx context.Context, config OnlineConf, optFuncs ...ConnOptionFunc\) \(\*Conn, error\)](<#NewConn>)
   - [func \(c \*Conn\) OnlineConf\(\) OnlineConf](<#Conn.OnlineConf>)
   - [func \(c \*Conn\) Replica\(\) advpg.DB](<#Conn.Replica>)
   - [func \(c \*Conn\) ReplicaPerTable\(table string\) advpg.DB](<#Conn.ReplicaPerTable>)
+- [type ConnOptionFunc](<#ConnOptionFunc>)
+  - [func WithConnMetrics\(ms advmetricsset.Set\) ConnOptionFunc](<#WithConnMetrics>)
+  - [func WithConnTracers\(tracers ...pgx.QueryTracer\) ConnOptionFunc](<#WithConnTracers>)
 - [type OnlineConf](<#OnlineConf>)
 - [type Pool](<#Pool>)
-  - [func NewPool\(ctx context.Context, config OnlineConf\) \(\*Pool, error\)](<#NewPool>)
+  - [func NewPool\(ctx context.Context, config OnlineConf, optFuncs ...PoolOptionFunc\) \(\*Pool, error\)](<#NewPool>)
   - [func \(p \*Pool\) OnlineConf\(\) OnlineConf](<#Pool.OnlineConf>)
   - [func \(p \*Pool\) Replica\(\) advpg.DB](<#Pool.Replica>)
   - [func \(p \*Pool\) ReplicaPerTable\(table string\) advpg.DB](<#Pool.ReplicaPerTable>)
-- [type QueryInfo](<#QueryInfo>)
-  - [func QueryInfoFromContext\(ctx context.Context\) \*QueryInfo](<#QueryInfoFromContext>)
-  - [func \(qi \*QueryInfo\) WithContext\(ctx context.Context\) context.Context](<#QueryInfo.WithContext>)
+- [type PoolOptionFunc](<#PoolOptionFunc>)
+  - [func WithPoolMetrics\(ms advmetricsset.Set\) PoolOptionFunc](<#WithPoolMetrics>)
+  - [func WithPoolTracers\(tracers ...pgx.QueryTracer\) PoolOptionFunc](<#WithPoolTracers>)
 
 
 ## Constants
@@ -934,7 +938,7 @@ const (
 ```
 
 <a name="LoadConnConfigs"></a>
-## func [LoadConnConfigs](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/config.go#L144>)
+## func [LoadConnConfigs](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/config.go#L147>)
 
 ```go
 func LoadConnConfigs(config OnlineConf) (masterConf, replicaConf *pgx.ConnConfig, err error)
@@ -943,7 +947,7 @@ func LoadConnConfigs(config OnlineConf) (masterConf, replicaConf *pgx.ConnConfig
 LoadConnConfigs loads the master and the replica\(s\) configs from the OnlineConf.
 
 <a name="LoadPoolConfigs"></a>
-## func [LoadPoolConfigs](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/config.go#L248>)
+## func [LoadPoolConfigs](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/config.go#L251>)
 
 ```go
 func LoadPoolConfigs(config OnlineConf) (masterConf, replicaConf *pgxpool.Config, err error)
@@ -951,8 +955,17 @@ func LoadPoolConfigs(config OnlineConf) (masterConf, replicaConf *pgxpool.Config
 
 LoadPoolConfigs loads the master and the replica\(s\) pool configs from the OnlineConf.
 
+<a name="QueryInfoCtx"></a>
+## func [QueryInfoCtx](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L277>)
+
+```go
+func QueryInfoCtx(ctx context.Context, table, index string) context.Context
+```
+
+
+
 <a name="ReplicaByOpt"></a>
-## func [ReplicaByOpt](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L205>)
+## func [ReplicaByOpt](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L260>)
 
 ```go
 func ReplicaByOpt(db advpg.DB, opt *advpg.SelectOptions, table string) advpg.DB
@@ -961,7 +974,7 @@ func ReplicaByOpt(db advpg.DB, opt *advpg.SelectOptions, table string) advpg.DB
 ReplicaByOpt returns the master or the replica connection \(or pool\) based on the \[advpg.WithReplica\] option and /table/TableName/force\_replica\_usage setting.
 
 <a name="Conn"></a>
-## type [Conn](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L20-L24>)
+## type [Conn](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L23-L27>)
 
 Conn represents the master and the replica\(s\) connections. The replica connection is optional, while the master is not.
 
@@ -973,18 +986,18 @@ type Conn struct {
 ```
 
 <a name="NewConn"></a>
-### func [NewConn](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L56>)
+### func [NewConn](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L77>)
 
 ```go
-func NewConn(ctx context.Context, config OnlineConf) (*Conn, error)
+func NewConn(ctx context.Context, config OnlineConf, optFuncs ...ConnOptionFunc) (*Conn, error)
 ```
 
 NewConn creates the master and optionally the replica\(s\) connection\(s\).
 
-Use single connections for one\-shot cron jobs, cli tools, etc. For high\-availability workload like web servers, use [NewPool](<#NewPool>).
+Use single connections for one\-shot cron jobs, CLI tools, etc. For high\-availability workload like web servers, use [NewPool](<#NewPool>).
 
 <a name="Conn.OnlineConf"></a>
-### func \(\*Conn\) [OnlineConf](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L48>)
+### func \(\*Conn\) [OnlineConf](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L51>)
 
 ```go
 func (c *Conn) OnlineConf() OnlineConf
@@ -993,7 +1006,7 @@ func (c *Conn) OnlineConf() OnlineConf
 OnlineConf returns an [OnlineConf](<#OnlineConf>) instance passed to [NewConn](<#NewConn>).
 
 <a name="Conn.Replica"></a>
-### func \(\*Conn\) [Replica](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L28>)
+### func \(\*Conn\) [Replica](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L31>)
 
 ```go
 func (c *Conn) Replica() advpg.DB
@@ -1002,13 +1015,42 @@ func (c *Conn) Replica() advpg.DB
 Replica returns the replica connection if it's configured. The master connection is returned otherwise.
 
 <a name="Conn.ReplicaPerTable"></a>
-### func \(\*Conn\) [ReplicaPerTable](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L39>)
+### func \(\*Conn\) [ReplicaPerTable](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L42>)
 
 ```go
 func (c *Conn) ReplicaPerTable(table string) advpg.DB
 ```
 
 ReplicaPerTable checks /table/TableName/force\_replica\_usage setting in the OnlineConf to determine whether the replica should be used. The master connection is returned otherwise.
+
+<a name="ConnOptionFunc"></a>
+## type [ConnOptionFunc](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L57>)
+
+ConnOptionFunc represents options for the [NewConn](<#NewConn>). Any user\-defined function accepting a pointer to the \[pgx.ConnConfig\] can be used as an option.
+
+```go
+type ConnOptionFunc func(*pgx.ConnConfig)
+```
+
+<a name="WithConnMetrics"></a>
+### func [WithConnMetrics](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L69>)
+
+```go
+func WithConnMetrics(ms advmetricsset.Set) ConnOptionFunc
+```
+
+WithConnMetrics enables collection of the query and connection metrics.
+
+For detailed description of these metrics, see \[pgxmetrics.Tracer\].
+
+<a name="WithConnTracers"></a>
+### func [WithConnTracers](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L60>)
+
+```go
+func WithConnTracers(tracers ...pgx.QueryTracer) ConnOptionFunc
+```
+
+WithConnTracers attaches custom tracers to the connection config.
 
 <a name="OnlineConf"></a>
 ## type [OnlineConf](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/config.go#L32-L38>)
@@ -1026,7 +1068,7 @@ type OnlineConf interface {
 ```
 
 <a name="Pool"></a>
-## type [Pool](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L80-L84>)
+## type [Pool](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L109-L113>)
 
 Pool represents the master and the replica\(s\) connections pools. The replica pool is optional, while the master is not.
 
@@ -1038,18 +1080,18 @@ type Pool struct {
 ```
 
 <a name="NewPool"></a>
-### func [NewPool](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L116>)
+### func [NewPool](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L163>)
 
 ```go
-func NewPool(ctx context.Context, config OnlineConf) (*Pool, error)
+func NewPool(ctx context.Context, config OnlineConf, optFuncs ...PoolOptionFunc) (*Pool, error)
 ```
 
 NewPool creates the master and optionally the replica\(s\) connection pool\(s\).
 
-Use pooled connections for high\-availability workloads like web servers. For short\-living tasks like one\-shot cron jobs and cli tools, use [NewConn](<#NewConn>).
+Use pooled connections for high\-availability workloads like web servers. For short\-living tasks like one\-shot cron jobs and CLI tools, use [NewConn](<#NewConn>).
 
 <a name="Pool.OnlineConf"></a>
-### func \(\*Pool\) [OnlineConf](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L108>)
+### func \(\*Pool\) [OnlineConf](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L137>)
 
 ```go
 func (p *Pool) OnlineConf() OnlineConf
@@ -1058,7 +1100,7 @@ func (p *Pool) OnlineConf() OnlineConf
 OnlineConf returns an [OnlineConf](<#OnlineConf>) instance passed to [NewPool](<#NewPool>).
 
 <a name="Pool.Replica"></a>
-### func \(\*Pool\) [Replica](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L88>)
+### func \(\*Pool\) [Replica](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L117>)
 
 ```go
 func (p *Pool) Replica() advpg.DB
@@ -1067,7 +1109,7 @@ func (p *Pool) Replica() advpg.DB
 Replica returns the replica pool if it's configured. The master pool is returned otherwise.
 
 <a name="Pool.ReplicaPerTable"></a>
-### func \(\*Pool\) [ReplicaPerTable](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L99>)
+### func \(\*Pool\) [ReplicaPerTable](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L128>)
 
 ```go
 func (p *Pool) ReplicaPerTable(table string) advpg.DB
@@ -1075,35 +1117,34 @@ func (p *Pool) ReplicaPerTable(table string) advpg.DB
 
 ReplicaPerTable checks /table/TableName/force\_replica\_usage setting in the OnlineConf to determine whether the replica should be used. The master pool is returned otherwise.
 
-<a name="QueryInfo"></a>
-## type [QueryInfo](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/context.go#L6-L9>)
+<a name="PoolOptionFunc"></a>
+## type [PoolOptionFunc](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L143>)
 
-QueryInfo should be moved to the go\-adv\-metrics project TODO
-
-```go
-type QueryInfo struct {
-    Table string
-    Index string
-}
-```
-
-<a name="QueryInfoFromContext"></a>
-### func [QueryInfoFromContext](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/context.go#L17>)
+PoolOptionFunc represents options for the [NewPool](<#NewPool>). Any user\-defined function accepting a pointer to the \[pgxpool.Config\] can be used as an option.
 
 ```go
-func QueryInfoFromContext(ctx context.Context) *QueryInfo
+type PoolOptionFunc func(*pgxpool.Config)
 ```
 
-
-
-<a name="QueryInfo.WithContext"></a>
-### func \(\*QueryInfo\) [WithContext](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/context.go#L13>)
+<a name="WithPoolMetrics"></a>
+### func [WithPoolMetrics](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L155>)
 
 ```go
-func (qi *QueryInfo) WithContext(ctx context.Context) context.Context
+func WithPoolMetrics(ms advmetricsset.Set) PoolOptionFunc
 ```
 
+WithPoolMetrics enables collection of the query, connection, and pool metrics.
 
+For detailed description of these metrics, see \[pgxmetrics.Tracer\].
+
+<a name="WithPoolTracers"></a>
+### func [WithPoolTracers](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L146>)
+
+```go
+func WithPoolTracers(tracers ...pgx.QueryTracer) PoolOptionFunc
+```
+
+WithPoolTracers attaches custom tracers to the connection pool config.
 
 # adv\-pg
 

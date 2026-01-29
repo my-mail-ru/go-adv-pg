@@ -264,7 +264,7 @@ func (tm *TableModel) linkIndicesToColumns() error {
 		}
 
 		if idx.Name == "" {
-			idx.Name = getDefaultIndexName(&idx, idxCols) // passing by pointer here doesn't require modern go for semantic
+			idx.Name = defaultIndexName(&idx, idxCols) // passing by pointer here doesn't require modern go for semantic
 		}
 
 		if idx.DisableSelector {
@@ -284,6 +284,10 @@ func (tm *TableModel) linkIndicesToColumns() error {
 		}
 
 		tm.Indices[i] = idx
+
+		if idx.IsPrimaryKey {
+			tm.PrimaryKeyIndex = &tm.Indices[i]
+		}
 	}
 
 	return nil
@@ -405,7 +409,7 @@ func (tm *TableModel) colByName(name string) (*Column, error) {
 	return nil, fmt.Errorf("adv-pg: %s: unknown column name %q", tm.GoName, name)
 }
 
-func getDefaultIndexName(idx *advpg.Index, idxCols []*Column) string {
+func defaultIndexName(idx *advpg.Index, idxCols []*Column) string {
 	var sb strings.Builder
 
 	if idx.IsPrimaryKey && len(idx.Keys) > 1 {

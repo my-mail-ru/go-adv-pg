@@ -28,6 +28,7 @@ type TableModel struct {
 	Columns             []*Column
 	ColumnsByGoName     map[string]*Column
 	ColumnsByName       map[string]*Column
+	PrimaryKeyIndex     *advpg.Index
 	PrimaryKeyColumns   []*Column
 	InsertValueColumns  []*Column
 	InsertResultColumns []*Column

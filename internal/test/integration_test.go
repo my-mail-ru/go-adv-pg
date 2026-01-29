@@ -8,6 +8,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"regexp"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,6 +20,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/onlineconf/onlineconf-go/v2"
 
+	advmetricsset "github.com/my-mail-ru/go-adv-metrics/set"
 	advpg "github.com/my-mail-ru/go-adv-pg"
 	advpgconn "github.com/my-mail-ru/go-adv-pg/conn"
 )
@@ -41,15 +45,16 @@ func getConf(t *testing.T) advpgconn.OnlineConf {
 	return conf
 }
 
-func connectDB(t *testing.T) (context.Context, advpg.DB) {
+func connectDB(t *testing.T) (context.Context, advpg.DB, advmetricsset.Set) {
 	ctx := t.Context()
+	ms := advmetricsset.New()
 
-	db, err := advpgconn.NewConn(ctx, getConf(t))
+	db, err := advpgconn.NewConn(ctx, getConf(t), advpgconn.WithConnMetrics(ms))
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	return ctx, db
+	return ctx, db, ms
 }
 
 type (
@@ -76,7 +81,7 @@ func (es errScanner) Scan(...any) error {
 }
 
 func TestUserDAO(t *testing.T) {
-	ctx, db := connectDB(t)
+	ctx, db, ms := connectDB(t)
 	userDAO := NewUserDAO(db)
 	userID := 0
 
@@ -248,6 +253,106 @@ func TestUserDAO(t *testing.T) {
 			t.Fatalf("got %v, expected sql.ErrNoRows", err)
 		}
 	})
+
+	checkMetrics(t, ms, expectedMetrics{
+		{
+			table:   "users",
+			index:   "ID",
+			command: "SELECT",
+		}: 6,
+		{
+			table:   "users",
+			index:   "Name",
+			command: "SELECT",
+		}: 1,
+		{
+			table:   "users",
+			index:   "IDType",
+			command: "SELECT",
+		}: 2,
+		{
+			table:   "users",
+			command: "INSERT",
+		}: 2,
+		{
+			table:   "users",
+			command: "UPDATE",
+		}: 6,
+		{
+			table:   "users",
+			index:   "ID",
+			command: "DELETE",
+		}: 2,
+	})
+}
+
+type expectedMetrics map[expectedMetric]int
+
+type expectedMetric struct {
+	table   string
+	index   string
+	command string
+}
+
+var (
+	metricRegexp = regexp.MustCompile(`(?m:^pgx_queries_total{([^}]+)} (\d+)$)`)
+	labelsRegexp = regexp.MustCompile(`(?m:(?:^|,)(\w+)="(\w+)")`)
+)
+
+// TODO make adv-metrics/testing package with generalized checkers like this
+func checkMetrics(t *testing.T, ms advmetricsset.Set, want expectedMetrics) {
+	t.Run("check metrics", func(t *testing.T) {
+		buf := &strings.Builder{}
+
+		ms.WritePrometheus(buf)
+
+		metricMatches := metricRegexp.FindAllStringSubmatch(buf.String(), -1)
+		if len(metricMatches) == 0 {
+			t.Fatal("no metrics found")
+		}
+
+		for _, metricMatch := range metricMatches {
+			gotCount, err := strconv.Atoi(metricMatch[2])
+			if err != nil {
+				t.Fatal(metricMatch[0], ": invalid count:", err)
+			}
+
+			labelMatches := labelsRegexp.FindAllStringSubmatch(metricMatch[1], -1)
+			if len(labelMatches) == 0 {
+				t.Fatal("no labels:", metricMatch[0])
+			}
+
+			labels := make(map[string]string, len(labelMatches))
+			for _, labelMatch := range labelMatches {
+				if labelMatch[2] == "" {
+					t.Fatal(labelMatch[1], "label is empty but it shouldn't")
+				}
+
+				labels[labelMatch[1]] = labelMatch[2]
+			}
+
+			got := expectedMetric{
+				table:   labels["table"],
+				index:   labels["index"],
+				command: labels["command"],
+			}
+
+			wantCount, ok := want[got]
+			if !ok {
+				t.Fatalf("unexpected metric %#v", got)
+			}
+
+			if gotCount != wantCount {
+				t.Fatalf("metric %#v: got count %d, want count %d", got, gotCount, wantCount)
+			}
+
+			delete(want, got)
+		}
+
+		for _, notFound := range want {
+			t.Fatal("missing metric", notFound)
+		}
+	})
 }
 
 func createUserID(t *testing.T, db advpg.DB) int {
@@ -274,7 +379,7 @@ func createUserID(t *testing.T, db advpg.DB) int {
 }
 
 func TestExtLinkDAO(t *testing.T) {
-	ctx, db := connectDB(t)
+	ctx, db, ms := connectDB(t)
 	extDAO := NewExtLinkDAO(db)
 	now := MyTime{Time: time.Now().Round(time.Second)}
 	userID := createUserID(t, db)
@@ -328,10 +433,26 @@ func TestExtLinkDAO(t *testing.T) {
 			t.Fatalf("LinkCount after Insert with UpdateOnConflict: got %d, want %d", got.LinkCount(), initialLinkCount+1)
 		}
 	})
+
+	checkMetrics(t, ms, expectedMetrics{
+		{
+			table:   "users",
+			command: "INSERT",
+		}: 1,
+		{
+			table:   "ext_links",
+			command: "INSERT",
+		}: 4,
+		{
+			table:   "ext_links",
+			index:   "PrimaryKey",
+			command: "SELECT",
+		}: 2,
+	})
 }
 
 func TestUserViewsDAO(t *testing.T) {
-	ctx, db := connectDB(t)
+	ctx, db, ms := connectDB(t)
 	viewsDAO := NewUserViewsDAO(db)
 	userID := createUserID(t, db)
 
@@ -362,10 +483,30 @@ func TestUserViewsDAO(t *testing.T) {
 			t.Fatalf("Views after Insert with UpdateOnConflict: got %d, want %d", got.Views(), initialViews+2)
 		}
 	})
+
+	checkMetrics(t, ms, expectedMetrics{
+		{
+			table:   "users",
+			command: "INSERT",
+		}: 1,
+		{
+			table:   "user_views",
+			command: "INSERT",
+		}: 2,
+		{
+			table:   "user_views",
+			command: "UPDATE",
+		}: 1,
+		{
+			table:   "user_views",
+			index:   "UserID",
+			command: "SELECT",
+		}: 2,
+	})
 }
 
 func TestSeenDAO(t *testing.T) {
-	ctx, db := connectDB(t)
+	ctx, db, ms := connectDB(t)
 	seenDAO := NewSeenDAO(db)
 	userID := createUserID(t, db)
 
@@ -397,5 +538,25 @@ func TestSeenDAO(t *testing.T) {
 		seen.SetSeenAt(time.Now())
 		must(t, seenDAO.Update(ctx, &seen))
 		must(t, NewSeenDAO(errDB{}).Update(ctx, &seen))
+	})
+
+	checkMetrics(t, ms, expectedMetrics{
+		{
+			table:   "users",
+			command: "INSERT",
+		}: 1,
+		{
+			table:   "seen",
+			command: "INSERT",
+		}: 2,
+		{
+			table:   "seen",
+			index:   "UserID",
+			command: "SELECT",
+		}: 2,
+		{
+			table:   "seen",
+			command: "UPDATE",
+		}: 1,
 	})
 }

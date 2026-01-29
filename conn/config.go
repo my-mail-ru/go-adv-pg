@@ -108,9 +108,12 @@ func buildConnString(user, pass string, hostPorts []string, base string, connect
 
 	ret.WriteByte('/')
 	ret.WriteString(base)
-	ret.WriteString("?default_query_exec_mode=simple_protocol&connect_timeout=")
-	// ret.WriteString(connectTimeout.String())
-	ret.WriteString(strconv.FormatInt(int64(connectTimeout/time.Second), 10)) // XXX parseConnectTimeoutSetting is ill
+	ret.WriteString("?default_query_exec_mode=simple_protocol")
+
+	if connectTimeout != 0 {
+		// XXX parseConnectTimeoutSetting is ill
+		appendParam("&connect_timeout=", strconv.FormatInt(int64(connectTimeout/time.Second), 10), ret)
+	}
 
 	return ret
 }
