@@ -5,17 +5,18 @@
 ## Features
 
 * Maps a value of a Go struct type to the PostgreSQL database table record.
-* Generates `SELECT`, `INSERT`, `UPDATE`, and `DELETE` queries and corresponding Data Access Object (DAO)
+* Generates `SELECT`, `INSERT`, `UPDATE`, and `DELETE` queries and corresponding Data Access Object (DAO).
   methods for single- or multiple-valued keys.
 * Multiple keys can be specified for `SELECT` and `DELETE` queries (`IsMulti`).
 * Raw SQL snippets can be specified to customize data storage or retrieval (`SQLScan` and `SQLValue`).
-* Returning `DEFAULT` values from a table schema during `INSERT` (`InitByStorage`)
+* Returning `DEFAULT` values from a table schema during `INSERT` (`InitByStorage`).
 * Returning a value set by a `BEFORE UPDATE` trigger during `UPDATE` (`UpdateByStorage`).
 * Update an existing record if a unique constraint (like a primary key) conflict occurs, aka "UPSERT" (`UpdateOnConflict`).
 * Ignore unique constraint conflict (`OnConflictDoNothing`).
 * ActiveRecord: generate Getter and Setter methods for all applicable fields, "smart" `UPDATE` that updates only the
   fields that are really changed.
 * Mutators: implement concurrency-safe counters in a table.
+* Configuration and initialization of database connections and connection pools using the [OnlineConf](https://github.com/onlineconf/onlineconf).
 
 ## Example
 

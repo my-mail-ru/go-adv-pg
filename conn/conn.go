@@ -274,6 +274,8 @@ func ReplicaByOpt(db advpg.DB, opt *advpg.SelectOptions, table string) advpg.DB 
 	return repl.ReplicaPerTable(table)
 }
 
+// QueryInfoCtx is just a wrapper for [pgxmetrics.QueryInfo.WithContext].
+// QueryInfoCtx is intended to be used from generated code to reduce the import count.
 func QueryInfoCtx(ctx context.Context, table, index string) context.Context {
 	return (&pgxmetrics.QueryInfo{
 		Table: table,
