@@ -379,7 +379,7 @@ func createUserID(t *testing.T, db advpg.DB) int {
 }
 
 func TestExtLinkDAO(t *testing.T) {
-	ctx, db, _ := connectDB(t)
+	ctx, db, ms := connectDB(t)
 	extDAO := NewExtLinkDAO(db)
 	now := MyTime{Time: time.Now().Round(time.Second)}
 	userID := createUserID(t, db)
@@ -433,10 +433,26 @@ func TestExtLinkDAO(t *testing.T) {
 			t.Fatalf("LinkCount after Insert with UpdateOnConflict: got %d, want %d", got.LinkCount(), initialLinkCount+1)
 		}
 	})
+
+	checkMetrics(t, ms, expectedMetrics{
+		{
+			table:   "users",
+			command: "INSERT",
+		}: 1,
+		{
+			table:   "ext_links",
+			command: "INSERT",
+		}: 4,
+		{
+			table:   "ext_links",
+			index:   "PrimaryKey",
+			command: "SELECT",
+		}: 2,
+	})
 }
 
 func TestUserViewsDAO(t *testing.T) {
-	ctx, db, _ := connectDB(t)
+	ctx, db, ms := connectDB(t)
 	viewsDAO := NewUserViewsDAO(db)
 	userID := createUserID(t, db)
 
@@ -467,10 +483,30 @@ func TestUserViewsDAO(t *testing.T) {
 			t.Fatalf("Views after Insert with UpdateOnConflict: got %d, want %d", got.Views(), initialViews+2)
 		}
 	})
+
+	checkMetrics(t, ms, expectedMetrics{
+		{
+			table:   "users",
+			command: "INSERT",
+		}: 1,
+		{
+			table:   "user_views",
+			command: "INSERT",
+		}: 2,
+		{
+			table:   "user_views",
+			command: "UPDATE",
+		}: 1,
+		{
+			table:   "user_views",
+			index:   "UserID",
+			command: "SELECT",
+		}: 2,
+	})
 }
 
 func TestSeenDAO(t *testing.T) {
-	ctx, db, _ := connectDB(t)
+	ctx, db, ms := connectDB(t)
 	seenDAO := NewSeenDAO(db)
 	userID := createUserID(t, db)
 
@@ -502,5 +538,25 @@ func TestSeenDAO(t *testing.T) {
 		seen.SetSeenAt(time.Now())
 		must(t, seenDAO.Update(ctx, &seen))
 		must(t, NewSeenDAO(errDB{}).Update(ctx, &seen))
+	})
+
+	checkMetrics(t, ms, expectedMetrics{
+		{
+			table:   "users",
+			command: "INSERT",
+		}: 1,
+		{
+			table:   "seen",
+			command: "INSERT",
+		}: 2,
+		{
+			table:   "seen",
+			index:   "UserID",
+			command: "SELECT",
+		}: 2,
+		{
+			table:   "seen",
+			command: "UPDATE",
+		}: 1,
 	})
 }
