@@ -8,6 +8,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -330,7 +331,7 @@ func queryInsertMultiUser(models []UserRecord) *advpg.QueryBuilder {
 		q.AppendArgs(model.data.Type)
 		q.AppendSQL(")")
 
-		q.AppendResults(&model.data.ID, &model.data.PostCount, &model.data.CreatedAt, &model.data.UpdatedAt)
+		q.AppendResults(&models[i].data.ID, &models[i].data.PostCount, &models[i].data.CreatedAt, &models[i].data.UpdatedAt)
 	}
 
 	q.AppendSQL(sqlInsertTailUser)
@@ -360,6 +361,10 @@ func (dao UserDAO) InsertMulti(ctx context.Context, records []UserRecord) error 
 
 		if err == nil {
 			err = rows.Err()
+		}
+
+		if to < len(results) {
+			return fmt.Errorf("UserDAO.InsertMulti: got %d records, but %d was expected", to, len(results))
 		}
 	}
 
@@ -681,7 +686,7 @@ func queryInsertMultiExtLink(models []ExtLinkRecord) *advpg.QueryBuilder {
 		q.AppendArgs(model.data.Status)
 		q.AppendSQL(")")
 
-		q.AppendResults(&model.data.LinkCount)
+		q.AppendResults(&models[i].data.LinkCount)
 	}
 
 	q.AppendSQL(sqlInsertTailExtLink)
@@ -711,6 +716,10 @@ func (dao ExtLinkDAO) InsertMulti(ctx context.Context, records []ExtLinkRecord) 
 
 		if err == nil {
 			err = rows.Err()
+		}
+
+		if to < len(results) {
+			return fmt.Errorf("ExtLinkDAO.InsertMulti: got %d records, but %d was expected", to, len(results))
 		}
 	}
 
@@ -937,7 +946,7 @@ func queryInsertMultiUserViews(models []UserViewsRecord) *advpg.QueryBuilder {
 		q.AppendArgs(model.data.Views + model.mutViews)
 		q.AppendSQL(")")
 
-		q.AppendResults(&model.data.Views)
+		q.AppendResults(&models[i].data.Views)
 	}
 
 	q.AppendSQL(sqlInsertTailUserViews)
@@ -967,6 +976,10 @@ func (dao UserViewsDAO) InsertMulti(ctx context.Context, records []UserViewsReco
 
 		if err == nil {
 			err = rows.Err()
+		}
+
+		if to < len(results) {
+			return fmt.Errorf("UserViewsDAO.InsertMulti: got %d records, but %d was expected", to, len(results))
 		}
 	}
 
@@ -1157,7 +1170,7 @@ func queryInsertMultiSeen(models []SeenRecord) *advpg.QueryBuilder {
 		q.AppendArgs(model.data.UserID)
 		q.AppendSQL(")")
 
-		q.AppendResults(&model.data.SeenAt)
+		q.AppendResults(&models[i].data.SeenAt)
 	}
 
 	q.AppendSQL(sqlInsertTailSeen)
@@ -1187,6 +1200,10 @@ func (dao SeenDAO) InsertMulti(ctx context.Context, records []SeenRecord) error 
 
 		if err == nil {
 			err = rows.Err()
+		}
+
+		if to < len(results) {
+			return fmt.Errorf("SeenDAO.InsertMulti: got %d records, but %d was expected", to, len(results))
 		}
 	}
 	if errors.Is(err, sql.ErrNoRows) {

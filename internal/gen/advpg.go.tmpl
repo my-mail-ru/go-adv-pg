@@ -448,7 +448,7 @@ func queryInsertMulti{{$model.GoName}}(models []{{$model.RecordType}}) *{{$.AdvP
 		{{ end -}}
 		q.AppendSQL(")")
 
-		q.AppendResults({{ template "results" $model.InsertResultColumns }})
+		q.AppendResults({{ template "results" $model.InsertMultiResultColumns }})
 	}
 
 	q.AppendSQL(sqlInsertTail{{$model.GoName}})
@@ -479,6 +479,10 @@ func (dao {{$model.DAO}}) InsertMulti(ctx context.Context, records []{{$model.Re
 
 			if err == nil {
 				err = rows.Err()
+			}
+
+			if to < len(results) {
+				return fmt.Errorf("{{$model.DAO}}.InsertMulti: got %d records, but %d was expected", to, len(results))
 			}
 		}
 		{{ if $model.OnConflictDoNothing -}}

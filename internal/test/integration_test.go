@@ -264,6 +264,12 @@ func TestUserDAO(t *testing.T) {
 		}
 
 		must(t, userDAO.InsertMulti(ctx, users))
+
+		for i := range 999 {
+			if users[i].ID() >= users[i+1].ID() {
+				t.Fatalf("user IDs aren't monotonically increasing: users[%d].ID=%d, users[%d].ID=%d", i, users[i].ID(), i+1, users[i+1].ID())
+			}
+		}
 	})
 
 	checkMetrics(t, ms, expectedMetrics{

@@ -243,6 +243,24 @@ func (tm *TableModel) iterInsertArgs(needMutators bool) iter.Seq2[int, InsertArg
 	}
 }
 
+func (tm *TableModel) InsertMultiResultColumns() iter.Seq2[int, *Column] {
+	suffix := ""
+	if !tm.DisableActiveRecord {
+		suffix = "data."
+	}
+
+	return func(yield func(int, *Column) bool) {
+		for i, col := range tm.InsertResultColumns {
+			multiCol := *col
+			multiCol.GoExpr = "models[i]." + suffix + col.GoName
+
+			if !yield(i, &multiCol) {
+				return
+			}
+		}
+	}
+}
+
 func (tm *TableModel) RecordType() string {
 	if tm.DisableActiveRecord {
 		return tm.GoName // the struct type name as declared by a developer
