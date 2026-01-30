@@ -8,6 +8,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 	"time"
 
 	advpg "github.com/my-mail-ru/go-adv-pg"
@@ -18,7 +19,9 @@ import (
 
 const (
 	sqlSelectUser          = `SELECT id, name, type, post_count, created_at, updated_at FROM users`
-	sqlInsertUser          = `INSERT INTO users (name, type) VALUES ($1, $2) RETURNING id, post_count, created_at, updated_at`
+	sqlInsertHeadUser      = `INSERT INTO users (name, type) VALUES `
+	sqlInsertTailUser      = ` RETURNING id, post_count, created_at, updated_at`
+	sqlInsertUser          = sqlInsertHeadUser + `($1, $2)` + sqlInsertTailUser
 	sqlFullUpdateUser      = `UPDATE users SET name=$1, type=$2, post_count=post_count+$3`
 	sqlUpdateReturningUser = ` RETURNING post_count, updated_at`
 	sqlSelectMutatorsUser  = `SELECT post_count FROM users WHERE id=$1`
@@ -305,6 +308,64 @@ func (dao UserDAO) Insert(ctx context.Context, data *UserRecord) error {
 	return err
 }
 
+func queryInsertMultiUser(models []UserRecord) *advpg.QueryBuilder {
+	if len(models) == 0 {
+		return &advpg.QueryBuilder{}
+	}
+
+	q := advpg.NewQueryBuilderCap(sqlInsertHeadUser, 2*len(models), 4*len(models))
+
+	for i, model := range models {
+		if i == 0 {
+			q.AppendSQL("(")
+		} else {
+			q.AppendSQL(",(")
+		}
+
+		q.AppendPlaceholder()
+		q.AppendArgs(model.data.Name)
+		q.AppendSQL(",")
+
+		q.AppendPlaceholder()
+		q.AppendArgs(model.data.Type)
+		q.AppendSQL(")")
+
+		q.AppendResults(&model.data.ID, &model.data.PostCount, &model.data.CreatedAt, &model.data.UpdatedAt)
+	}
+
+	q.AppendSQL(sqlInsertTailUser)
+
+	return q
+}
+
+func (dao UserDAO) InsertMulti(ctx context.Context, records []UserRecord) error {
+	ctx = advpgconn.QueryInfoCtx(ctx, "users", "")
+	q := queryInsertMultiUser(records)
+	rows, err := dao.db.Query(ctx, q.SQL(), q.Args()...)
+	defer rows.Close()
+
+	if err == nil {
+		results := q.Results()
+		from := 0
+		to := 4
+
+		for rows.Next() {
+			if err = rows.Scan(results[from:to]...); err != nil {
+				break
+			}
+
+			from = to
+			to += 4
+		}
+
+		if err == nil {
+			err = rows.Err()
+		}
+	}
+
+	return err
+}
+
 func (model *UserRecord) queryFullUpdate() *advpg.SimpleQuery {
 	return advpg.NewSimpleQuery(
 		sqlFullUpdateUser+" WHERE id=$4"+sqlUpdateReturningUser,
@@ -398,7 +459,9 @@ func (dao UserDAO) Update(ctx context.Context, data *UserRecord) error {
 
 const (
 	sqlSelectExtLink          = `SELECT user_id, ext_id, EXTRACT(EPOCH FROM created_at::TIMESTAMP WITH TIME ZONE)::BIGINT AS created_at, status, link_count FROM ext_links`
-	sqlInsertExtLink          = `INSERT INTO ext_links (user_id, ext_id, created_at, status) VALUES ($1, $2, TIMESTAMP WITH TIME ZONE 'epoch' + INTERVAL '1 sec' * $3, $4) ON CONFLICT (user_id, ext_id) DO UPDATE SET status=EXCLUDED.status, link_count=ext_links.link_count+$5 RETURNING link_count`
+	sqlInsertHeadExtLink      = `INSERT INTO ext_links (user_id, ext_id, created_at, status) VALUES `
+	sqlInsertTailExtLink      = ` ON CONFLICT (user_id, ext_id) DO UPDATE SET status=EXCLUDED.status, link_count=ext_links.link_count+$5 RETURNING link_count`
+	sqlInsertExtLink          = sqlInsertHeadExtLink + `($1, $2, TIMESTAMP WITH TIME ZONE 'epoch' + INTERVAL '1 sec' * $3, $4)` + sqlInsertTailExtLink
 	sqlFullUpdateExtLink      = `UPDATE ext_links SET status=$1, link_count=link_count+$2`
 	sqlUpdateReturningExtLink = ` RETURNING link_count`
 	sqlSelectMutatorsExtLink  = `SELECT link_count FROM ext_links WHERE user_id=$1 AND ext_id=$2`
@@ -588,6 +651,72 @@ func (dao ExtLinkDAO) Insert(ctx context.Context, data *ExtLinkRecord) error {
 	return err
 }
 
+func queryInsertMultiExtLink(models []ExtLinkRecord) *advpg.QueryBuilder {
+	if len(models) == 0 {
+		return &advpg.QueryBuilder{}
+	}
+
+	q := advpg.NewQueryBuilderCap(sqlInsertHeadExtLink, 4*len(models), 1*len(models))
+
+	for i, model := range models {
+		if i == 0 {
+			q.AppendSQL("(")
+		} else {
+			q.AppendSQL(",(")
+		}
+
+		q.AppendPlaceholder()
+		q.AppendArgs(model.data.UserID)
+		q.AppendSQL(",")
+
+		q.AppendPlaceholder()
+		q.AppendArgs(model.data.ExternalID)
+		q.AppendSQL(",")
+
+		q.AppendSQL(strings.ReplaceAll("TIMESTAMP WITH TIME ZONE 'epoch' + INTERVAL '1 sec' * %s", "%s", q.Placeholder()))
+		q.AppendArgs(model.data.CreatedAt)
+		q.AppendSQL(",")
+
+		q.AppendPlaceholder()
+		q.AppendArgs(model.data.Status)
+		q.AppendSQL(")")
+
+		q.AppendResults(&model.data.LinkCount)
+	}
+
+	q.AppendSQL(sqlInsertTailExtLink)
+
+	return q
+}
+
+func (dao ExtLinkDAO) InsertMulti(ctx context.Context, records []ExtLinkRecord) error {
+	ctx = advpgconn.QueryInfoCtx(ctx, "ext_links", "")
+	q := queryInsertMultiExtLink(records)
+	rows, err := dao.db.Query(ctx, q.SQL(), q.Args()...)
+	defer rows.Close()
+
+	if err == nil {
+		results := q.Results()
+		from := 0
+		to := 1
+
+		for rows.Next() {
+			if err = rows.Scan(results[from:to]...); err != nil {
+				break
+			}
+
+			from = to
+			to += 1
+		}
+
+		if err == nil {
+			err = rows.Err()
+		}
+	}
+
+	return err
+}
+
 func (model *ExtLinkRecord) queryFullUpdate() *advpg.SimpleQuery {
 	return advpg.NewSimpleQuery(
 		sqlFullUpdateExtLink+" WHERE user_id=$3 AND ext_id=$4"+sqlUpdateReturningExtLink,
@@ -675,7 +804,9 @@ func (dao ExtLinkDAO) Update(ctx context.Context, data *ExtLinkRecord) error {
 
 const (
 	sqlSelectUserViews          = `SELECT user_id, views FROM user_views`
-	sqlInsertUserViews          = `INSERT INTO user_views (user_id, views) VALUES ($1, $2) ON CONFLICT (user_id) DO UPDATE SET views=user_views.views+$3 RETURNING views`
+	sqlInsertHeadUserViews      = `INSERT INTO user_views (user_id, views) VALUES `
+	sqlInsertTailUserViews      = ` ON CONFLICT (user_id) DO UPDATE SET views=user_views.views+$3 RETURNING views`
+	sqlInsertUserViews          = sqlInsertHeadUserViews + `($1, $2)` + sqlInsertTailUserViews
 	sqlUpdateReturningUserViews = ` RETURNING views`
 	sqlSelectMutatorsUserViews  = `SELECT views FROM user_views WHERE user_id=$1`
 )
@@ -784,6 +915,64 @@ func (dao UserViewsDAO) Insert(ctx context.Context, data *UserViewsRecord) error
 	return err
 }
 
+func queryInsertMultiUserViews(models []UserViewsRecord) *advpg.QueryBuilder {
+	if len(models) == 0 {
+		return &advpg.QueryBuilder{}
+	}
+
+	q := advpg.NewQueryBuilderCap(sqlInsertHeadUserViews, 2*len(models), 1*len(models))
+
+	for i, model := range models {
+		if i == 0 {
+			q.AppendSQL("(")
+		} else {
+			q.AppendSQL(",(")
+		}
+
+		q.AppendPlaceholder()
+		q.AppendArgs(model.data.UserID)
+		q.AppendSQL(",")
+
+		q.AppendPlaceholder()
+		q.AppendArgs(model.data.Views + model.mutViews)
+		q.AppendSQL(")")
+
+		q.AppendResults(&model.data.Views)
+	}
+
+	q.AppendSQL(sqlInsertTailUserViews)
+
+	return q
+}
+
+func (dao UserViewsDAO) InsertMulti(ctx context.Context, records []UserViewsRecord) error {
+	ctx = advpgconn.QueryInfoCtx(ctx, "user_views", "")
+	q := queryInsertMultiUserViews(records)
+	rows, err := dao.db.Query(ctx, q.SQL(), q.Args()...)
+	defer rows.Close()
+
+	if err == nil {
+		results := q.Results()
+		from := 0
+		to := 1
+
+		for rows.Next() {
+			if err = rows.Scan(results[from:to]...); err != nil {
+				break
+			}
+
+			from = to
+			to += 1
+		}
+
+		if err == nil {
+			err = rows.Err()
+		}
+	}
+
+	return err
+}
+
 func (model *UserViewsRecord) queryUpdate() *advpg.QueryBuilder {
 	if model.mutViews == 0 {
 		return &advpg.QueryBuilder{}
@@ -844,7 +1033,9 @@ func (dao UserViewsDAO) Update(ctx context.Context, data *UserViewsRecord) error
 
 const (
 	sqlSelectSeen     = `SELECT user_id, seen_at FROM seen`
-	sqlInsertSeen     = `INSERT INTO seen (user_id) VALUES ($1) ON CONFLICT (user_id) DO NOTHING RETURNING seen_at`
+	sqlInsertHeadSeen = `INSERT INTO seen (user_id) VALUES `
+	sqlInsertTailSeen = ` ON CONFLICT (user_id) DO NOTHING RETURNING seen_at`
+	sqlInsertSeen     = sqlInsertHeadSeen + `($1)` + sqlInsertTailSeen
 	sqlFullUpdateSeen = `UPDATE seen SET seen_at=$1`
 )
 
@@ -941,6 +1132,63 @@ func (dao SeenDAO) Insert(ctx context.Context, data *SeenRecord) error {
 	ctx = advpgconn.QueryInfoCtx(ctx, "seen", "")
 	q := data.queryInsert()
 	err := dao.db.QueryRow(ctx, q.SQL(), q.Args()...).Scan(q.Results()...)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+
+	return err
+}
+
+func queryInsertMultiSeen(models []SeenRecord) *advpg.QueryBuilder {
+	if len(models) == 0 {
+		return &advpg.QueryBuilder{}
+	}
+
+	q := advpg.NewQueryBuilderCap(sqlInsertHeadSeen, 1*len(models), 1*len(models))
+
+	for i, model := range models {
+		if i == 0 {
+			q.AppendSQL("(")
+		} else {
+			q.AppendSQL(",(")
+		}
+
+		q.AppendPlaceholder()
+		q.AppendArgs(model.data.UserID)
+		q.AppendSQL(")")
+
+		q.AppendResults(&model.data.SeenAt)
+	}
+
+	q.AppendSQL(sqlInsertTailSeen)
+
+	return q
+}
+
+func (dao SeenDAO) InsertMulti(ctx context.Context, records []SeenRecord) error {
+	ctx = advpgconn.QueryInfoCtx(ctx, "seen", "")
+	q := queryInsertMultiSeen(records)
+	rows, err := dao.db.Query(ctx, q.SQL(), q.Args()...)
+	defer rows.Close()
+
+	if err == nil {
+		results := q.Results()
+		from := 0
+		to := 1
+
+		for rows.Next() {
+			if err = rows.Scan(results[from:to]...); err != nil {
+				break
+			}
+
+			from = to
+			to += 1
+		}
+
+		if err == nil {
+			err = rows.Err()
+		}
+	}
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil
 	}

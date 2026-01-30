@@ -254,6 +254,18 @@ func TestUserDAO(t *testing.T) {
 		}
 	})
 
+	t.Run("InsertMulti", func(t *testing.T) {
+		users := make([]UserRecord, 1000)
+		for i := range 1000 {
+			users[i] = *(User{
+				Name: "TestInsertMulti " + strconv.Itoa(i),
+				Type: i,
+			}.Record())
+		}
+
+		must(t, userDAO.InsertMulti(ctx, users))
+	})
+
 	checkMetrics(t, ms, expectedMetrics{
 		{
 			table:   "users",
@@ -273,7 +285,7 @@ func TestUserDAO(t *testing.T) {
 		{
 			table:   "users",
 			command: "INSERT",
-		}: 2,
+		}: 3,
 		{
 			table:   "users",
 			command: "UPDATE",

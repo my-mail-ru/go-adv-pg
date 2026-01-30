@@ -209,6 +209,14 @@ func (tm *TableModel) IterateQueryMethods(idx *advpg.Index) iter.Seq[queryMethod
 }
 
 func (tm *TableModel) IterateInsertArgs() iter.Seq2[int, InsertArgColumn] {
+	return tm.iterInsertArgs(true)
+}
+
+func (tm *TableModel) IterateInsertArgsVals() iter.Seq2[int, InsertArgColumn] {
+	return tm.iterInsertArgs(false)
+}
+
+func (tm *TableModel) iterInsertArgs(needMutators bool) iter.Seq2[int, InsertArgColumn] {
 	return func(yield func(int, InsertArgColumn) bool) {
 		for i, col := range tm.InsertValueColumns {
 			if !yield(i, InsertArgColumn{
@@ -219,7 +227,7 @@ func (tm *TableModel) IterateInsertArgs() iter.Seq2[int, InsertArgColumn] {
 			}
 		}
 
-		if !tm.UpdateOnConflict {
+		if !needMutators || !tm.UpdateOnConflict {
 			return
 		}
 
