@@ -417,6 +417,13 @@ func (dao {{$model.DAO}}) Insert(ctx context.Context, data *{{$model.RecordType}
 	{{- else -}}
 		_, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
 	{{- end }}
+
+	{{ if not $model.DisableActiveRecord -}}
+		if err == nil {
+			data.reset()
+		}
+
+	{{ end -}}
 	return err
 }
 
@@ -483,17 +490,27 @@ func (dao {{$model.DAO}}) Insert(ctx context.Context, data *{{$model.RecordType}
 				}
 
 				if to < len(results) {
-					return fmt.Errorf("{{$model.DAO}}.InsertMulti: got %d records, but %d was expected", to, len(results))
+					err = fmt.Errorf("{{$model.DAO}}.InsertMulti: got %d records, but %d was expected", to, len(results))
 				}
 			}
 			{{ if $model.OnConflictDoNothing -}}
+
 				if errors.Is(err, sql.ErrNoRows) {
-					return nil
+					err = nil
 				}
 			{{ end -}}
 		{{- else -}}
 			_, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
 		{{- end }}
+
+		{{ if not $model.DisableActiveRecord -}}
+			if err == nil {
+				for i := range records {
+					records[i].reset()
+				}
+			}
+
+		{{ end -}}
 		return err
 	}
 

@@ -643,5 +643,10 @@ func TestUserOptionsDAO(t *testing.T) {
 			table:   "user_options",
 			command: "INSERT",
 		}: 2,
+		{
+			table:   "user_options",
+			index:   "UserID",
+			command: "SELECT",
+		}: 1,
 	})
 }

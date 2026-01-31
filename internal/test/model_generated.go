@@ -305,6 +305,10 @@ func (dao UserDAO) Insert(ctx context.Context, data *UserRecord) error {
 	q := data.queryInsert()
 	err := dao.db.QueryRow(ctx, q.SQL(), q.Args()...).Scan(q.Results()...)
 
+	if err == nil {
+		data.reset()
+	}
+
 	return err
 }
 
@@ -363,7 +367,13 @@ func (dao UserDAO) InsertMulti(ctx context.Context, records []UserRecord) error 
 		}
 
 		if to < len(results) {
-			return fmt.Errorf("UserDAO.InsertMulti: got %d records, but %d was expected", to, len(results))
+			err = fmt.Errorf("UserDAO.InsertMulti: got %d records, but %d was expected", to, len(results))
+		}
+	}
+
+	if err == nil {
+		for i := range records {
+			records[i].reset()
 		}
 	}
 
@@ -652,6 +662,10 @@ func (dao ExtLinkDAO) Insert(ctx context.Context, data *ExtLinkRecord) error {
 	q := data.queryInsert()
 	err := dao.db.QueryRow(ctx, q.SQL(), q.Args()...).Scan(q.Results()...)
 
+	if err == nil {
+		data.reset()
+	}
+
 	return err
 }
 
@@ -850,6 +864,10 @@ func (dao UserViewsDAO) Insert(ctx context.Context, data *UserViewsRecord) error
 	q := data.queryInsert()
 	err := dao.db.QueryRow(ctx, q.SQL(), q.Args()...).Scan(q.Results()...)
 
+	if err == nil {
+		data.reset()
+	}
+
 	return err
 }
 
@@ -1016,6 +1034,10 @@ func (dao SeenDAO) Insert(ctx context.Context, data *SeenRecord) error {
 		return nil
 	}
 
+	if err == nil {
+		data.reset()
+	}
+
 	return err
 }
 
@@ -1070,11 +1092,17 @@ func (dao SeenDAO) InsertMulti(ctx context.Context, records []SeenRecord) error 
 		}
 
 		if to < len(results) {
-			return fmt.Errorf("SeenDAO.InsertMulti: got %d records, but %d was expected", to, len(results))
+			err = fmt.Errorf("SeenDAO.InsertMulti: got %d records, but %d was expected", to, len(results))
 		}
 	}
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil
+		err = nil
+	}
+
+	if err == nil {
+		for i := range records {
+			records[i].reset()
+		}
 	}
 
 	return err
@@ -1323,6 +1351,10 @@ func (dao UserOptionsDAO) Insert(ctx context.Context, data *UserOptionsRecord) e
 	q := data.queryInsert()
 	err := dao.db.QueryRow(ctx, q.SQL(), q.Args()...).Scan(q.Results()...)
 
+	if err == nil {
+		data.reset()
+	}
+
 	return err
 }
 
@@ -1385,7 +1417,13 @@ func (dao UserOptionsDAO) InsertMulti(ctx context.Context, records []UserOptions
 		}
 
 		if to < len(results) {
-			return fmt.Errorf("UserOptionsDAO.InsertMulti: got %d records, but %d was expected", to, len(results))
+			err = fmt.Errorf("UserOptionsDAO.InsertMulti: got %d records, but %d was expected", to, len(results))
+		}
+	}
+
+	if err == nil {
+		for i := range records {
+			records[i].reset()
 		}
 	}
 
