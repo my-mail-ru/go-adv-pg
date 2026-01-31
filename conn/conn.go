@@ -36,7 +36,7 @@ func (c *Conn) Replica() advpg.DB {
 	return c.replica
 }
 
-// ReplicaPerTable checks /table/TableName/force_replica_usage setting in the OnlineConf
+// ReplicaPerTable checks the /table/TableName/force_replica_usage setting in the OnlineConf
 // to determine whether the replica should be used.
 // The master connection is returned otherwise.
 func (c *Conn) ReplicaPerTable(table string) advpg.DB {
@@ -122,7 +122,7 @@ func (p *Pool) Replica() advpg.DB {
 	return p.Pool
 }
 
-// ReplicaPerTable checks /table/TableName/force_replica_usage setting in the OnlineConf
+// ReplicaPerTable checks the /table/TableName/force_replica_usage setting in the OnlineConf
 // to determine whether the replica should be used.
 // The master pool is returned otherwise.
 func (p *Pool) ReplicaPerTable(table string) advpg.DB {
@@ -256,7 +256,7 @@ var (
 )
 
 // ReplicaByOpt returns the master or the replica connection (or pool) based on the [advpg.WithReplica] option
-// and /table/TableName/force_replica_usage setting.
+// and the /table/TableName/force_replica_usage setting.
 func ReplicaByOpt(db advpg.DB, opt *advpg.SelectOptions, table string) advpg.DB {
 	if opt.UseMaster() {
 		return db

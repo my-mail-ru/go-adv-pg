@@ -83,8 +83,10 @@ func loadConnStrings(config OnlineConf) (masterConnString, replicaConnString *st
 
 	replicas := replicasRegexp.Split(replicasStr, -1)
 	if len(replicas) == 0 {
-		return nil, nil, 0, fmt.Errorf("%s: replica list is empty", config.Path("/replica"))
+		return nil, nil, 0, fmt.Errorf("%s: replica list is specified but is empty", config.Path("/replica"))
 	}
+
+	replicas = append(replicas, hostPort) // master fallback
 
 	return masterConnString, buildConnString(user, pass, replicas, base, connectTimeout), timeout, nil
 }

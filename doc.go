@@ -212,10 +212,13 @@ The Insert DAO method takes two arguments: the [context.Context] and a pointer t
   - You can use InitByStorage with mutators to set an initial value of the counter using
     DEFAULT in a table schema.
 
-Calling the  InsertMulti method is equivalent to calling the Insert method for each record in a slice,
+Calling the InsertMulti method is equivalent to calling the Insert method for each record in a slice,
 but only a single query is performed. Currently, when UpdateOnConflict _and_ [Mutators] are
 both used, the InsertMulti method isn't generated. All other features described above are
 supported, including UpdateOnConflict or [Mutators] used alone.
+
+A successful Insert (or InsertMulti) will reset the changed field flags for all the record(s) processed.
+Flags are not reset when InsertMulti fails, regardless of whether some records were successfully inserted.
 
 TODO support [Mutators] with UpdateOnConflict enabled using `INSERT ... ON CONFLICT DO UPDATE ... FROM VALUES` syntax.
 

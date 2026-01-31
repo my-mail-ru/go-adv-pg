@@ -193,6 +193,8 @@ The Insert DAO method takes two arguments: the [context.Context](<https://pkg.go
 
 Calling the InsertMulti method is equivalent to calling the Insert method for each record in a slice, but only a single query is performed. Currently, when UpdateOnConflict \_and\_ [Mutators](<https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-Mutators>) are both used, the InsertMulti method isn't generated. All other features described above are supported, including UpdateOnConflict or [Mutators](<https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-Mutators>) used alone.
 
+A successful Insert \(or InsertMulti\) will reset the changed field flags for all the record\(s\) processed. Flags are not reset when InsertMulti fails, regardless of whether some records were successfully inserted.
+
 TODO support [Mutators](<https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-Mutators>) with UpdateOnConflict enabled using \`INSERT ... ON CONFLICT DO UPDATE ... FROM VALUES\` syntax.
 
 ### Update
@@ -877,7 +879,7 @@ Package advpgconn \- configuration and initialization of pgx connections and con
 
 ### OnlineConf
 
-This package uses OnlineConf to configure connections and connection pools. The typical configuration layout is:
+This package uses the OnlineConf to configure connections and connection pools. The typical configuration layout is:
 
 ```
 confRoot, err := onlineconf.OpenModule("")
@@ -885,7 +887,7 @@ dbSubtree := confRoot.Subtree("/project/db")
 pool, err := advpgconn.NewPool(ctx, dbSubtree) // uses /project/db/base and so on
 ```
 
-The [OnlineConf](<#OnlineConf>) interface assumes the [github.com/onlineconf/onlineconf\\\-go/v2](<https://pkg.go.dev/github.com/onlineconf/onlineconf-go/v2/>) llibrary, but you may use any compatible implementation \(or test mock\).
+The [OnlineConf](<#OnlineConf>) interface assumes the [github.com/onlineconf/onlineconf\\\-go/v2](<https://pkg.go.dev/github.com/onlineconf/onlineconf-go/v2/>) llibrary, but you may use any compatible implementation \(or a test mock\).
 
 Connection and pool settings are compatible with the Perl implementation. Durations can be specified as integer seconds or [time.Duration](<https://pkg.go.dev/time/#Duration>) syntax \(which obviously isn't compatible with Perl\).
 
@@ -893,20 +895,22 @@ Connection and pool settings are compatible with the Perl implementation. Durati
 
 The following settings are used by [NewConn](<#NewConn>) \(which in turn calls [LoadConnConfigs](<#LoadConnConfigs>)\):
 
-- /host \- the database master host with port,
-- /replica \- the database replica\(s\) host with port. Multiple comma or semicolon host names are supported,
-- /base \- the database name,
-- /user,
-- /pass,
+- /host \- the database master host with port. Mandatory.
+- /replica \- the database replica\(s\) host with port. Multiple comma or semicolon host names are supported. Optional.
+- /base \- the database name. Mandatory.
+- /user \- Mandatory.
+- /pass \- Mandatory.
 - /timeout \- query and statement timeout. Default: [DefaultTimeout](<#DefaultTimeout>) \(30s\),
-- /connect\_timeout \- connection timeout. Default: timeout setting,
-- /set\_statement\_timeout \- perform an SET statement\_timeout query after establishing the new connection. Default: don't set a statement timeout \(0\).
+- /connect\_timeout \- connection timeout. Default: the /timeout setting,
+- /set\_statement\_timeout \- perform the \`SET statement\_timeout\` query after establishing the new connection. Default: don't set a statement timeout \(0\).
 
-Note that round\-robin replica balancing method is not yet supported. The connection to the next host on this list is performed only when the previous one isn't available.
+When the replica list is specified, a master is used as the last fallback when all the replicas aren't available.
+
+Note that the round\-robin replica balancing method is not yet supported. The connection to the next host on this list is performed only when the previous one has failed.
 
 DefaultQueryExecMode is set to SimpleProtocol.
 
-/timeout and /set\_statement\_timeout are checked every time a new connection is established or a query is executed. To change any other connection setting, you have to restart the application \(TODO support configuration reloading\).
+/timeout and /set\_statement\_timeout are checked every time a new connection is established or a query is executed. To change any other connection setting, you have to restart the application \(TODO support full configuration reloading\).
 
 ### Pool settings
 
@@ -915,7 +919,7 @@ All of the above, plus:
 - /pool\_max\_conns \- maximum pool size. Fallback: /pool\_size \(for Perl compatibility\). Default: [DefaultPoolMaxConns](<#DefaultTimeout>) \(10\),
 - /pool\_min\_conns \- minimum pool size. Default: DefaultPoolMinConns \(1\),
 - /pool\_min\_idle\_conns \- minimum number of idle connections in the pool. Default: DefaultPoolMinIdleConns \(0\),
-- /pool\_max\_conn\_lifetime \- duration since creation after which a connection will be automatically closed. Default: not set.
+- /pool\_max\_conn\_lifetime \- duration since the connection creation after which a connection will be automatically closed. Default: not set.
 - /pool\_max\_conn\_lifetime\_jitter \- maximum random increment for /pool\_max\_conn\_lifetime. Default: not set.
 - /pool\_max\_conn\_idle\_time \- Default: not set.
 - /pool\_health\_check\_period \- duration between connection checks. Default: not set.
@@ -932,9 +936,9 @@ These settings can be set per\-table:
 - /table/$\{TableName\}/timeout \- query timeout. Overrides /timeout.
 - /table/$\{TableName\}/force\_replica\_usage \- use a replica for Select queries even if it's not enabled explicitly with \[advpg.WithReplica\].
 
-Note that the /force\_replica\_usage setting isn't compatible with similarly named Perl setting because the Perl implementation uses language\-specific package names instead of table names used by this library.
+Note that the /force\_replica\_usage setting isn't compatible with the similarly named Perl setting because the Perl implementation uses language\-specific package names instead of table names used by this library.
 
-Per\-table settings are checked on\-the\-fly, so no application restart is required to change these.
+Per\-table settings are checked on\-the\-fly, so no application restart is required to change them.
 
 ## Index
 
@@ -981,7 +985,7 @@ const (
 ```
 
 <a name="LoadConnConfigs"></a>
-## func [LoadConnConfigs](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/config.go#L147>)
+## func [LoadConnConfigs](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/config.go#L149>)
 
 ```go
 func LoadConnConfigs(config OnlineConf) (masterConf, replicaConf *pgx.ConnConfig, err error)
@@ -990,7 +994,7 @@ func LoadConnConfigs(config OnlineConf) (masterConf, replicaConf *pgx.ConnConfig
 LoadConnConfigs loads the master and the replica\(s\) configs from the OnlineConf.
 
 <a name="LoadPoolConfigs"></a>
-## func [LoadPoolConfigs](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/config.go#L251>)
+## func [LoadPoolConfigs](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/config.go#L253>)
 
 ```go
 func LoadPoolConfigs(config OnlineConf) (masterConf, replicaConf *pgxpool.Config, err error)
@@ -1014,7 +1018,7 @@ QueryInfoCtx is just a wrapper for \[pgxmetrics.QueryInfo.WithContext\]. QueryIn
 func ReplicaByOpt(db advpg.DB, opt *advpg.SelectOptions, table string) advpg.DB
 ```
 
-ReplicaByOpt returns the master or the replica connection \(or pool\) based on the \[advpg.WithReplica\] option and /table/TableName/force\_replica\_usage setting.
+ReplicaByOpt returns the master or the replica connection \(or pool\) based on the \[advpg.WithReplica\] option and the /table/TableName/force\_replica\_usage setting.
 
 <a name="Conn"></a>
 ## type [Conn](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L23-L27>)
@@ -1064,7 +1068,7 @@ Replica returns the replica connection if it's configured. The master connection
 func (c *Conn) ReplicaPerTable(table string) advpg.DB
 ```
 
-ReplicaPerTable checks /table/TableName/force\_replica\_usage setting in the OnlineConf to determine whether the replica should be used. The master connection is returned otherwise.
+ReplicaPerTable checks the /table/TableName/force\_replica\_usage setting in the OnlineConf to determine whether the replica should be used. The master connection is returned otherwise.
 
 <a name="ConnOptionFunc"></a>
 ## type [ConnOptionFunc](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L57>)
@@ -1158,7 +1162,7 @@ Replica returns the replica pool if it's configured. The master pool is returned
 func (p *Pool) ReplicaPerTable(table string) advpg.DB
 ```
 
-ReplicaPerTable checks /table/TableName/force\_replica\_usage setting in the OnlineConf to determine whether the replica should be used. The master pool is returned otherwise.
+ReplicaPerTable checks the /table/TableName/force\_replica\_usage setting in the OnlineConf to determine whether the replica should be used. The master pool is returned otherwise.
 
 <a name="PoolOptionFunc"></a>
 ## type [PoolOptionFunc](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L143>)
