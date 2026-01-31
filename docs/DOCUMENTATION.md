@@ -168,7 +168,12 @@ The only difference between Select and Delete method configuration is the names 
 
 ### Insert
 
-The Insert DAO method takes two arguments: the [context.Context](<https://pkg.go.dev/context/#Context>), and a pointer to the Record \(or to $\{Model\} directly if [ActiveRecord](<https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-ActiveRecord>) is disabled for a table\).
+The insert operation is represented by two methods:
+
+- Insert, which takes a single record,
+- InsertMulti, which takes a slice of records.
+
+The Insert DAO method takes two arguments: the [context.Context](<https://pkg.go.dev/context/#Context>) and a pointer to the Record \(or to $\{Model\} directly if [ActiveRecord](<https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-ActiveRecord>) is disabled for a table\).
 
 - All the fields except for those having DisableInsert and InitByStorage set to true are INSERTed into a table,
 
@@ -185,6 +190,10 @@ The Insert DAO method takes two arguments: the [context.Context](<https://pkg.go
   UpdateOnConflict may not be used with tables with InitByStorage primary keys.
 
 - You can use InitByStorage with mutators to set an initial value of the counter using DEFAULT in a table schema.
+
+Calling the InsertMulti method is equivalent to calling the Insert method for each record in a slice, but only a single query is performed. Currently, when UpdateOnConflict \_and\_ [Mutators](<https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-Mutators>) are both used, the InsertMulti method isn't generated. All other features described above are supported, including UpdateOnConflict or [Mutators](<https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-Mutators>) used alone.
+
+TODO support [Mutators](<https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-Mutators>) with UpdateOnConflict enabled using \`INSERT ... ON CONFLICT DO UPDATE ... FROM VALUES\` syntax.
 
 ### Update
 

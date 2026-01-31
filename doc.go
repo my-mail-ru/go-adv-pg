@@ -180,7 +180,11 @@ Only the error value is returned by the Deleter.
 
 # Insert
 
-The Insert DAO method takes two arguments: the [context.Context], and a pointer to the Record
+The insert operation is represented by two methods:
+  - Insert, which takes a single record,
+  - InsertMulti, which takes a slice of records.
+
+The Insert DAO method takes two arguments: the [context.Context] and a pointer to the Record
 (or to ${Model} directly if [ActiveRecord] is disabled for a table).
 
   - All the fields except for those having DisableInsert and InitByStorage set to true
@@ -207,6 +211,13 @@ The Insert DAO method takes two arguments: the [context.Context], and a pointer 
 
   - You can use InitByStorage with mutators to set an initial value of the counter using
     DEFAULT in a table schema.
+
+Calling the  InsertMulti method is equivalent to calling the Insert method for each record in a slice,
+but only a single query is performed. Currently, when UpdateOnConflict _and_ [Mutators] are
+both used, the InsertMulti method isn't generated. All other features described above are
+supported, including UpdateOnConflict or [Mutators] used alone.
+
+TODO support [Mutators] with UpdateOnConflict enabled using `INSERT ... ON CONFLICT DO UPDATE ... FROM VALUES` syntax.
 
 # Update
 
