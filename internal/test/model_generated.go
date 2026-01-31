@@ -9,7 +9,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	advpg "github.com/my-mail-ru/go-adv-pg"
@@ -656,76 +655,6 @@ func (dao ExtLinkDAO) Insert(ctx context.Context, data *ExtLinkRecord) error {
 	return err
 }
 
-func queryInsertMultiExtLink(models []ExtLinkRecord) *advpg.QueryBuilder {
-	if len(models) == 0 {
-		return &advpg.QueryBuilder{}
-	}
-
-	q := advpg.NewQueryBuilderCap(sqlInsertHeadExtLink, 4*len(models), 1*len(models))
-
-	for i, model := range models {
-		if i == 0 {
-			q.AppendSQL("(")
-		} else {
-			q.AppendSQL(",(")
-		}
-
-		q.AppendPlaceholder()
-		q.AppendArgs(model.data.UserID)
-		q.AppendSQL(",")
-
-		q.AppendPlaceholder()
-		q.AppendArgs(model.data.ExternalID)
-		q.AppendSQL(",")
-
-		q.AppendSQL(strings.ReplaceAll("TIMESTAMP WITH TIME ZONE 'epoch' + INTERVAL '1 sec' * %s", "%s", q.Placeholder()))
-		q.AppendArgs(model.data.CreatedAt)
-		q.AppendSQL(",")
-
-		q.AppendPlaceholder()
-		q.AppendArgs(model.data.Status)
-		q.AppendSQL(")")
-
-		q.AppendResults(&models[i].data.LinkCount)
-	}
-
-	q.AppendSQL(sqlInsertTailExtLink)
-
-	return q
-}
-
-func (dao ExtLinkDAO) InsertMulti(ctx context.Context, records []ExtLinkRecord) error {
-	ctx = advpgconn.QueryInfoCtx(ctx, "ext_links", "")
-	q := queryInsertMultiExtLink(records)
-	rows, err := dao.db.Query(ctx, q.SQL(), q.Args()...)
-	defer rows.Close()
-
-	if err == nil {
-		results := q.Results()
-		from := 0
-		to := 1
-
-		for rows.Next() {
-			if err = rows.Scan(results[from:to]...); err != nil {
-				break
-			}
-
-			from = to
-			to += 1
-		}
-
-		if err == nil {
-			err = rows.Err()
-		}
-
-		if to < len(results) {
-			return fmt.Errorf("ExtLinkDAO.InsertMulti: got %d records, but %d was expected", to, len(results))
-		}
-	}
-
-	return err
-}
-
 func (model *ExtLinkRecord) queryFullUpdate() *advpg.SimpleQuery {
 	return advpg.NewSimpleQuery(
 		sqlFullUpdateExtLink+" WHERE user_id=$3 AND ext_id=$4"+sqlUpdateReturningExtLink,
@@ -920,68 +849,6 @@ func (dao UserViewsDAO) Insert(ctx context.Context, data *UserViewsRecord) error
 	ctx = advpgconn.QueryInfoCtx(ctx, "user_views", "")
 	q := data.queryInsert()
 	err := dao.db.QueryRow(ctx, q.SQL(), q.Args()...).Scan(q.Results()...)
-
-	return err
-}
-
-func queryInsertMultiUserViews(models []UserViewsRecord) *advpg.QueryBuilder {
-	if len(models) == 0 {
-		return &advpg.QueryBuilder{}
-	}
-
-	q := advpg.NewQueryBuilderCap(sqlInsertHeadUserViews, 2*len(models), 1*len(models))
-
-	for i, model := range models {
-		if i == 0 {
-			q.AppendSQL("(")
-		} else {
-			q.AppendSQL(",(")
-		}
-
-		q.AppendPlaceholder()
-		q.AppendArgs(model.data.UserID)
-		q.AppendSQL(",")
-
-		q.AppendPlaceholder()
-		q.AppendArgs(model.data.Views + model.mutViews)
-		q.AppendSQL(")")
-
-		q.AppendResults(&models[i].data.Views)
-	}
-
-	q.AppendSQL(sqlInsertTailUserViews)
-
-	return q
-}
-
-func (dao UserViewsDAO) InsertMulti(ctx context.Context, records []UserViewsRecord) error {
-	ctx = advpgconn.QueryInfoCtx(ctx, "user_views", "")
-	q := queryInsertMultiUserViews(records)
-	rows, err := dao.db.Query(ctx, q.SQL(), q.Args()...)
-	defer rows.Close()
-
-	if err == nil {
-		results := q.Results()
-		from := 0
-		to := 1
-
-		for rows.Next() {
-			if err = rows.Scan(results[from:to]...); err != nil {
-				break
-			}
-
-			from = to
-			to += 1
-		}
-
-		if err == nil {
-			err = rows.Err()
-		}
-
-		if to < len(results) {
-			return fmt.Errorf("UserViewsDAO.InsertMulti: got %d records, but %d was expected", to, len(results))
-		}
-	}
 
 	return err
 }
@@ -1269,6 +1136,330 @@ func (dao SeenDAO) Update(ctx context.Context, data *SeenRecord) error {
 		return nil
 	}
 	ctx = advpgconn.QueryInfoCtx(ctx, "seen", "")
+
+	ct, err := dao.db.Exec(ctx, query, q.Args()...)
+	if err == nil && ct.RowsAffected() == 0 {
+		err = sql.ErrNoRows
+	}
+	if err == nil {
+		data.reset()
+	}
+
+	return err
+}
+
+//// UserOptions ////
+
+const (
+	sqlSelectUserOptions     = `SELECT user_id, option_id, flag, option FROM user_options`
+	sqlInsertHeadUserOptions = `INSERT INTO user_options (user_id, option_id, flag) VALUES `
+	sqlInsertTailUserOptions = ` ON CONFLICT (user_id, option_id) DO UPDATE SET flag=EXCLUDED.flag, option=EXCLUDED.option RETURNING option`
+	sqlInsertUserOptions     = sqlInsertHeadUserOptions + `($1, $2, $3)` + sqlInsertTailUserOptions
+	sqlFullUpdateUserOptions = `UPDATE user_options SET flag=$1, option=$2`
+)
+
+type UserOptionsRecord struct {
+	updateMask uint64
+	data       UserOptions
+}
+
+func (data UserOptions) Record() *UserOptionsRecord {
+	return &UserOptionsRecord{data: data}
+}
+
+func (model *UserOptionsRecord) UserID() int {
+	return model.data.UserID
+}
+
+func (model *UserOptionsRecord) OptionID() int {
+	return model.data.OptionID
+}
+
+func (model *UserOptionsRecord) Flag() bool {
+	return model.data.Flag
+}
+
+func (model *UserOptionsRecord) Option() string {
+	return model.data.Option
+}
+
+func (model *UserOptionsRecord) SetUserID(x int) {
+	model.data.UserID = x
+}
+
+func (model *UserOptionsRecord) SetOptionID(x int) {
+	model.data.OptionID = x
+}
+
+func (model *UserOptionsRecord) SetFlag(x bool) {
+	model.data.Flag = x
+	model.updateMask |= 1
+}
+
+func (model *UserOptionsRecord) SetOption(x string) {
+	model.data.Option = x
+	model.updateMask |= 2
+}
+
+func (*UserOptionsRecord) Table() string {
+	return "user_options"
+}
+
+type UserOptionsDAO struct {
+	db advpg.DB
+}
+
+func NewUserOptionsDAO(db advpg.DB) UserOptionsDAO {
+	return UserOptionsDAO{db: db}
+}
+
+func (model *UserOptionsRecord) querySelectByPrimaryKey(inUserID int, inOptionID int) *advpg.SimpleQuery {
+	return advpg.NewSimpleQuery(
+		sqlSelectUserOptions+` WHERE user_id=$1 AND option_id=$2`,
+		[]any{inUserID, inOptionID},
+		[]any{&model.data.UserID, &model.data.OptionID, &model.data.Flag, &model.data.Option},
+	)
+}
+
+func (model *UserOptionsRecord) queryDeleteByPrimaryKey(inUserID int, inOptionID int) *advpg.SimpleQuery {
+	return advpg.NewSimpleQuery(
+		`DELETE FROM user_options WHERE user_id=$1 AND option_id=$2`,
+		[]any{inUserID, inOptionID},
+		nil,
+	)
+}
+
+func (dao UserOptionsDAO) SelectByPrimaryKey(ctx context.Context, inUserID int, inOptionID int, optFuncs ...advpg.SelectOptionFunc) (UserOptionsRecord, error) {
+	var data UserOptionsRecord
+	q := data.querySelectByPrimaryKey(inUserID, inOptionID)
+	ctx = advpgconn.QueryInfoCtx(ctx, "user_options", "PrimaryKey")
+	opt := advpg.NewSelectOptions(optFuncs...)
+	db := advpgconn.ReplicaByOpt(dao.db, opt, "user_options")
+	row := db.QueryRow(ctx, q.SQL(), q.Args()...)
+	err := row.Scan(q.Results()...)
+
+	return data, err
+}
+
+func (dao UserOptionsDAO) DeleteByPrimaryKey(ctx context.Context, inUserID int, inOptionID int) error {
+	ctx = advpgconn.QueryInfoCtx(ctx, "user_options", "PrimaryKey")
+	q := (*UserOptionsRecord)(nil).queryDeleteByPrimaryKey(inUserID, inOptionID)
+	ct, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
+	if err != nil {
+		return err
+	}
+
+	if ct.RowsAffected() == 0 {
+		return sql.ErrNoRows
+	}
+
+	return nil
+}
+
+func (model *UserOptionsRecord) querySelectByUserID(inUserID int) *advpg.SimpleQuery {
+	return advpg.NewSimpleQuery(
+		sqlSelectUserOptions+` WHERE user_id=$1 ORDER BY option_id`,
+		[]any{inUserID},
+		[]any{&model.data.UserID, &model.data.OptionID, &model.data.Flag, &model.data.Option},
+	)
+}
+
+func (model *UserOptionsRecord) queryDeleteByUserID(inUserID int) *advpg.SimpleQuery {
+	return advpg.NewSimpleQuery(
+		`DELETE FROM user_options WHERE user_id=$1`,
+		[]any{inUserID},
+		nil,
+	)
+}
+
+func (dao UserOptionsDAO) SelectByUserID(ctx context.Context, inUserID int, optFuncs ...advpg.SelectOptionFunc) ([]UserOptionsRecord, error) {
+	var data UserOptionsRecord
+	q := data.querySelectByUserID(inUserID)
+	ctx = advpgconn.QueryInfoCtx(ctx, "user_options", "UserID")
+	opt := advpg.NewSelectOptions(optFuncs...)
+	db := advpgconn.ReplicaByOpt(dao.db, opt, "user_options")
+
+	rows, err := db.Query(ctx, q.SQL(), q.Args()...)
+	if err != nil {
+		return nil, err
+	}
+
+	defer rows.Close()
+
+	ret := ([]UserOptionsRecord)(nil)
+
+	for rows.Next() {
+		if err = rows.Scan(q.Results()...); err != nil {
+			return nil, err
+		}
+
+		ret = append(ret, data)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return ret, nil
+}
+
+func (dao UserOptionsDAO) DeleteByUserID(ctx context.Context, inUserID int) error {
+	ctx = advpgconn.QueryInfoCtx(ctx, "user_options", "UserID")
+	q := (*UserOptionsRecord)(nil).queryDeleteByUserID(inUserID)
+	_, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
+	return err
+}
+
+func (model *UserOptionsRecord) queryInsert() *advpg.SimpleQuery {
+	return advpg.NewSimpleQuery(
+		sqlInsertUserOptions,
+		[]any{model.data.UserID, model.data.OptionID, model.data.Flag},
+		[]any{&model.data.Option},
+	)
+}
+
+func (dao UserOptionsDAO) Insert(ctx context.Context, data *UserOptionsRecord) error {
+	ctx = advpgconn.QueryInfoCtx(ctx, "user_options", "")
+	q := data.queryInsert()
+	err := dao.db.QueryRow(ctx, q.SQL(), q.Args()...).Scan(q.Results()...)
+
+	return err
+}
+
+func queryInsertMultiUserOptions(models []UserOptionsRecord) *advpg.QueryBuilder {
+	if len(models) == 0 {
+		return &advpg.QueryBuilder{}
+	}
+
+	q := advpg.NewQueryBuilderCap(sqlInsertHeadUserOptions, 3*len(models), 1*len(models))
+
+	for i, model := range models {
+		if i == 0 {
+			q.AppendSQL("(")
+		} else {
+			q.AppendSQL(",(")
+		}
+
+		q.AppendPlaceholder()
+		q.AppendArgs(model.data.UserID)
+		q.AppendSQL(",")
+
+		q.AppendPlaceholder()
+		q.AppendArgs(model.data.OptionID)
+		q.AppendSQL(",")
+
+		q.AppendPlaceholder()
+		q.AppendArgs(model.data.Flag)
+		q.AppendSQL(")")
+
+		q.AppendResults(&models[i].data.Option)
+	}
+
+	q.AppendSQL(sqlInsertTailUserOptions)
+
+	return q
+}
+
+func (dao UserOptionsDAO) InsertMulti(ctx context.Context, records []UserOptionsRecord) error {
+	ctx = advpgconn.QueryInfoCtx(ctx, "user_options", "")
+	q := queryInsertMultiUserOptions(records)
+	rows, err := dao.db.Query(ctx, q.SQL(), q.Args()...)
+	defer rows.Close()
+
+	if err == nil {
+		results := q.Results()
+		from := 0
+		to := 1
+
+		for rows.Next() {
+			if err = rows.Scan(results[from:to]...); err != nil {
+				break
+			}
+
+			from = to
+			to += 1
+		}
+
+		if err == nil {
+			err = rows.Err()
+		}
+
+		if to < len(results) {
+			return fmt.Errorf("UserOptionsDAO.InsertMulti: got %d records, but %d was expected", to, len(results))
+		}
+	}
+
+	return err
+}
+
+func (model *UserOptionsRecord) queryFullUpdate() *advpg.SimpleQuery {
+	return advpg.NewSimpleQuery(
+		sqlFullUpdateUserOptions+" WHERE user_id=$3 AND option_id=$4",
+		[]any{model.data.Flag, model.data.Option, model.data.UserID, model.data.OptionID},
+		[]any{},
+	)
+}
+
+func (dao UserOptionsDAO) FullUpdate(ctx context.Context, data *UserOptionsRecord) error {
+	ctx = advpgconn.QueryInfoCtx(ctx, "user_options", "")
+	q := data.queryFullUpdate()
+	ct, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
+	if err != nil {
+		return err
+	}
+
+	if ct.RowsAffected() == 0 {
+		return sql.ErrNoRows
+	}
+
+	return nil
+}
+
+func (model *UserOptionsRecord) queryUpdate() *advpg.QueryBuilder {
+	if model.updateMask == 0 {
+		return &advpg.QueryBuilder{}
+	}
+
+	q := advpg.NewQueryBuilder(`UPDATE user_options SET`)
+	if model.updateMask&1 != 0 {
+		if len(q.Args()) != 0 {
+			q.AppendSQL(",")
+		}
+
+		q.AppendSQL(" flag=$")
+		q.AppendPlaceholderNum()
+		q.AppendArgs(model.data.Flag)
+	}
+	if model.updateMask&2 != 0 {
+		if len(q.Args()) != 0 {
+			q.AppendSQL(",")
+		}
+
+		q.AppendSQL(" option=$")
+		q.AppendPlaceholderNum()
+		q.AppendArgs(model.data.Option)
+	}
+	q.AppendSQL(` WHERE user_id=$`)
+	q.AppendPlaceholderNum()
+	q.AppendArgs(model.data.UserID)
+	q.AppendSQL(` AND option_id=$`)
+	q.AppendPlaceholderNum()
+	q.AppendArgs(model.data.OptionID)
+
+	return q
+}
+
+func (model *UserOptionsRecord) reset() {
+	model.updateMask = 0
+}
+
+func (dao UserOptionsDAO) Update(ctx context.Context, data *UserOptionsRecord) error {
+	q := data.queryUpdate()
+	query := q.SQL()
+	if query == "" {
+		return nil
+	}
+	ctx = advpgconn.QueryInfoCtx(ctx, "user_options", "")
 
 	ct, err := dao.db.Exec(ctx, query, q.Args()...)
 	if err == nil && ct.RowsAffected() == 0 {

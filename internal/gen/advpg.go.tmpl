@@ -420,81 +420,84 @@ func (dao {{$model.DAO}}) Insert(ctx context.Context, data *{{$model.RecordType}
 	return err
 }
 
-func queryInsertMulti{{$model.GoName}}(models []{{$model.RecordType}}) *{{$.AdvPgPkg}}.QueryBuilder {
-	if len(models) == 0 {
-		return &{{$.AdvPgPkg}}.QueryBuilder{}
-	}
-
-	q := {{$.AdvPgPkg}}.NewQueryBuilderCap(sqlInsertHead{{$model.GoName}}, {{len $model.InsertValueColumns}}*len(models), {{len $model.InsertResultColumns}}*len(models))
-
-	for i, model := range models {
-		if i == 0 {
-			q.AppendSQL("(")
-		} else {
-			q.AppendSQL(",(")
+{{ if not (and $model.UpdateOnConflict $model.MutatorColumns) -}}
+	func queryInsertMulti{{$model.GoName}}(models []{{$model.RecordType}}) *{{$.AdvPgPkg}}.QueryBuilder {
+		if len(models) == 0 {
+			return &{{$.AdvPgPkg}}.QueryBuilder{}
 		}
 
-		{{ range $i, $col := $model.IterateInsertArgsVals -}}
-			{{- if $i -}}
-				q.AppendSQL(",")
-			{{ end }}
+		q := {{$.AdvPgPkg}}.NewQueryBuilderCap(sqlInsertHead{{$model.GoName}}, {{len $model.InsertValueColumns}}*len(models), {{len $model.InsertResultColumns}}*len(models))
 
-			{{ if $col.SQLValue -}}
-				q.AppendSQL(strings.ReplaceAll({{quote $col.SQLValue}}, "%s", q.Placeholder()))
-			{{ else -}}
-				q.AppendPlaceholder()
+		for i, model := range models {
+			if i == 0 {
+				q.AppendSQL("(")
+			} else {
+				q.AppendSQL(",(")
+			}
+
+			{{ range $i, $col := $model.IterateInsertArgsVals -}}
+				{{- if $i -}}
+					q.AppendSQL(",")
+				{{ end }}
+
+				{{ if $col.SQLValue -}}
+					q.AppendSQL(strings.ReplaceAll({{quote $col.SQLValue}}, "%s", q.Placeholder()))
+				{{ else -}}
+					q.AppendPlaceholder()
+				{{ end -}}
+				q.AppendArgs({{ template "insert_arg" $col }})
 			{{ end -}}
-			q.AppendArgs({{ template "insert_arg" $col }})
-		{{ end -}}
-		q.AppendSQL(")")
+			q.AppendSQL(")")
 
-		q.AppendResults({{ template "results" $model.InsertMultiResultColumns }})
+			q.AppendResults({{ template "results" $model.InsertMultiResultColumns }})
+		}
+
+		q.AppendSQL(sqlInsertTail{{$model.GoName}})
+
+		return q
 	}
 
-	q.AppendSQL(sqlInsertTail{{$model.GoName}})
-
-	return q
-}
-
-func (dao {{$model.DAO}}) InsertMulti(ctx context.Context, records []{{$model.RecordType}}) error {
-	ctx = {{$.AdvPgConnPkg}}.QueryInfoCtx(ctx, {{quote $model.Table.Table}}, "")
-	q := queryInsertMulti{{$model.GoName}}(records)
-	{{ if $model.InsertResultColumns -}}
-		rows, err :=dao.db.Query(ctx, q.SQL(), q.Args()...)
-		defer rows.Close()
-
-		if err == nil {
-			results := q.Results()
-			from := 0
-			to := {{len $model.InsertResultColumns}}
-
-			for rows.Next() {
-				if err = rows.Scan(results[from:to]...); err != nil {
-					break
-				}
-
-				from = to
-				to += {{len $model.InsertResultColumns}}
-			}
+	func (dao {{$model.DAO}}) InsertMulti(ctx context.Context, records []{{$model.RecordType}}) error {
+		ctx = {{$.AdvPgConnPkg}}.QueryInfoCtx(ctx, {{quote $model.Table.Table}}, "")
+		q := queryInsertMulti{{$model.GoName}}(records)
+		{{ if $model.InsertResultColumns -}}
+			rows, err :=dao.db.Query(ctx, q.SQL(), q.Args()...)
+			defer rows.Close()
 
 			if err == nil {
-				err = rows.Err()
-			}
+				results := q.Results()
+				from := 0
+				to := {{len $model.InsertResultColumns}}
 
-			if to < len(results) {
-				return fmt.Errorf("{{$model.DAO}}.InsertMulti: got %d records, but %d was expected", to, len(results))
+				for rows.Next() {
+					if err = rows.Scan(results[from:to]...); err != nil {
+						break
+					}
+
+					from = to
+					to += {{len $model.InsertResultColumns}}
+				}
+
+				if err == nil {
+					err = rows.Err()
+				}
+
+				if to < len(results) {
+					return fmt.Errorf("{{$model.DAO}}.InsertMulti: got %d records, but %d was expected", to, len(results))
+				}
 			}
-		}
-		{{ if $model.OnConflictDoNothing -}}
-			if errors.Is(err, sql.ErrNoRows) {
-				return nil
-			}
-		{{ end -}}
-	{{- else -}}
-		_, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
-	{{- end }}
-	return err
-}
+			{{ if $model.OnConflictDoNothing -}}
+				if errors.Is(err, sql.ErrNoRows) {
+					return nil
+				}
+			{{ end -}}
+		{{- else -}}
+			_, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
+		{{- end }}
+		return err
+	}
+
+{{ end -}}
 
 {{ if $model.UpdateValueColumns -}}
 	func (model *{{$model.RecordType}}) queryFullUpdate() *{{$.AdvPgPkg}}.SimpleQuery {
