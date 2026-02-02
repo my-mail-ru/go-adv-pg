@@ -2,6 +2,7 @@ package advpg
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"strconv"
 	"strings"
@@ -11,7 +12,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-var _ pgxpool.Pool // hey goimports
+var (
+	_ pgxpool.Pool    // hey goimports
+	_ = sql.ErrNoRows // hey pkgsite
+)
 
 // Table describes a database table. [github.com/my-mail-ru/go-adv-pg/cmd/adv-pg] code generator scans the source file
 // for global variable declarations of this type. The variable can have a name or be anonymous (`_`),
@@ -294,9 +298,9 @@ func (f *Field) Validate() error {
 // Note that you can use any other type with the same method set if you wish
 // to use handwritten DAO type.
 type DB interface {
-	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
-	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
-	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+	Query(ctx context.Context, query string, args ...any) (pgx.Rows, error)
+	QueryRow(ctx context.Context, query string, args ...any) pgx.Row
+	Exec(ctx context.Context, query string, args ...any) (pgconn.CommandTag, error)
 }
 
 type Query interface {
@@ -321,9 +325,9 @@ type SimpleQuery struct {
 
 var _ Query = &SimpleQuery{}
 
-func NewSimpleQuery(sql string, args, results []any) *SimpleQuery {
+func NewSimpleQuery(query string, args, results []any) *SimpleQuery {
 	return &SimpleQuery{
-		sql:     sql,
+		sql:     query,
 		args:    args,
 		results: results,
 	}
@@ -350,10 +354,10 @@ type QueryBuilder struct {
 
 var _ Query = &QueryBuilder{}
 
-func NewQueryBuilder(sql string) *QueryBuilder {
-	// TODO prealloc
+func NewQueryBuilder(query string) *QueryBuilder {
+	// TODO prealloc string based on an average size
 	sb := &strings.Builder{}
-	sb.WriteString(sql)
+	sb.WriteString(query)
 
 	return &QueryBuilder{
 		sql:     sb,
@@ -362,8 +366,24 @@ func NewQueryBuilder(sql string) *QueryBuilder {
 	}
 }
 
-func (qb *QueryBuilder) AppendSQL(sql string) {
-	_, _ = qb.sql.WriteString(sql)
+func NewQueryBuilderCap(query string, argsCap, resultsCap int) *QueryBuilder {
+	// TODO prealloc string based on an average size
+	sb := &strings.Builder{}
+	sb.WriteString(query)
+
+	return &QueryBuilder{
+		sql:     sb,
+		args:    make([]any, 0, argsCap),
+		results: make([]any, 0, resultsCap),
+	}
+}
+
+func (qb *QueryBuilder) AppendSQL(query string) {
+	_, _ = qb.sql.WriteString(query)
+}
+
+func (qb *QueryBuilder) Placeholder() string {
+	return "$" + strconv.Itoa(len(qb.args)+1)
 }
 
 func (qb *QueryBuilder) AppendPlaceholder() {
@@ -375,12 +395,12 @@ func (qb *QueryBuilder) AppendPlaceholderNum() {
 	qb.AppendSQL(strconv.Itoa(len(qb.args) + 1))
 }
 
-func (qb *QueryBuilder) AppendArgs(arg any) {
-	qb.args = append(qb.args, arg)
+func (qb *QueryBuilder) AppendArgs(arg ...any) {
+	qb.args = append(qb.args, arg...)
 }
 
-func (qb *QueryBuilder) AppendResults(res any) {
-	qb.results = append(qb.results, res)
+func (qb *QueryBuilder) AppendResults(res ...any) {
+	qb.results = append(qb.results, res...)
 }
 
 func (qb *QueryBuilder) SetResults(res []any) {

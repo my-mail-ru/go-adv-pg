@@ -137,6 +137,34 @@ var _ = advpg.Table{
 	}},
 }
 
+// UserOptions is used to test InsertMulti with UpdateOnConflict.
+type UserOptions struct {
+	UserID   int    `db:"user_id"`
+	OptionID int    `db:"option_id"`
+	Flag     bool   `db:"flag"`
+	Option   string `db:"option"`
+}
+
+var _ = advpg.Table{
+	Model:            UserOptions{},
+	Table:            "user_options",
+	UpdateOnConflict: true,
+	Indices: []advpg.Index{{
+		Keys:         []string{"user_id", "option_id"},
+		IsPrimaryKey: true,
+	}, {
+		Keys: []string{"user_id"},
+		Order: []advpg.Order{{
+			Field: "option_id",
+			Order: advpg.OrderAsc,
+		}},
+	}},
+	Fields: []advpg.Field{{
+		Field:         "Option",
+		InitByStorage: true,
+	}},
+}
+
 // MyTime is an example of SQLScan and SQLValue used with [sql.Scanner] and [driver.Valuer] implementation.
 type MyTime struct {
 	time.Time

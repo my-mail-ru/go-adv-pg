@@ -8,6 +8,20 @@ import "github.com/my-mail-ru/go-adv-pg"
 
 Package advpg \- the code\-first SQL query generator with [ActiveRecord](<https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-ActiveRecord>) support.
 
+### Features
+
+- Maps a value of a Go struct type to the PostgreSQL database table record.
+- Generates \`SELECT\`, \`INSERT\`, \`UPDATE\`, and \`DELETE\` queries and corresponding Data Access Object \(DAO\). methods for single\- or multiple\-valued keys.
+- Multiple keys can be specified for \`SELECT\` and \`DELETE\` queries \(\`IsMulti\`\).
+- Raw SQL snippets can be specified to customize data storage or retrieval \(\`SQLScan\` and \`SQLValue\`\).
+- Returning \`DEFAULT\` values from a table schema during \`INSERT\` \(\`InitByStorage\`\).
+- Returning a value set by a \`BEFORE UPDATE\` trigger during \`UPDATE\` \(\`UpdateByStorage\`\).
+- Update an existing record if a unique constraint \(like a primary key\) conflict occurs, aka "UPSERT" \(\`UpdateOnConflict\`\).
+- Ignore unique constraint conflict \(\`OnConflictDoNothing\`\).
+- [ActiveRecord](<https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-ActiveRecord>): generate Getter and Setter methods for all applicable fields, "smart" \`UPDATE\` that updates only the fields that are really changed.
+- [Mutators](<https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-Mutators>): implement concurrency\-safe counters in a table.
+- [github.com/my\\\-mail\\\-ru/go\\\-adv\\\-pg/conn](<https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg/conn/>): Configuration and initialization of database connections and connection pools using the [OnlineConf](<https://github.com/onlineconf/onlineconf>).
+
 ### Simplified workflow
 
 1. Add [github.com/my\\\-mail\\\-ru/go\\\-adv\\\-pg/cmd/adv\\\-pg](<https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg/cmd/adv-pg/>) tool for your project:
@@ -64,7 +78,7 @@ Every [Table](<#Table>) describing the model $\{Model\} declared in the source f
 
 - Query constants \(sqlSelect..., sqlInsert... and so on\) containing SQL query parts,
 - The Record type named $\{Model\}Record, if the [ActiveRecord](<https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-ActiveRecord>) isn't disabled,
-- Accessor methods: Getters for every column, and Setters for every updatable column, and Mutators, if the [ActiveRecord](<https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-ActiveRecord>) isn't disabled. The receiver type for these methods is the Record type,
+- Accessor methods: Getters for every column, and Setters for every updatable column, and [Mutators](<https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-Mutators>), if the [ActiveRecord](<https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-ActiveRecord>) isn't disabled. The receiver type for these methods is the Record type,
 - Query methods \(querySelect..., queryInsert and so on\) that return the type implementing the [Query](<#Query>) interface. The receiver type for these methods is the Record type \(or the $\{Model\} itself if the [ActiveRecord](<https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-ActiveRecord>) is disabled\),
 - The DAO type, if it isn't specified explicitly by a developer \(concerns both the default and explicitly declared DAOs\),
 - Database access methods \([Select](<https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-Select>), [Insert](<https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-Insert>), [Update](<https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-Update>), [Delete](<https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-Delete>)\) that accept keys or Record values \(or the $\{Model\} if the [ActiveRecord](<https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-ActiveRecord>) is disabled\). The receiver type for these methods is the DAO type. The first argument of all these methods is always the [context.Context](<https://pkg.go.dev/context/#Context>).
@@ -78,7 +92,7 @@ In a broader sense, the active record pattern is a software architectural patter
 - High\-level database access for a defined user type. The developer declares tables, indices, and properties of some fields, then the queries and database access methods are generated automatically,
 - Direct access to the object fields is restricted \(i.e. is possible only from inside the model package\), and generated Getter and Setter methods of a Record type have to be used for it,
 - The Update database access method updates only the fields that were changed since the previous Select, Insert or Update operation. If no fields were changed, the Update operation is omitted,
-- Mutators can be used to implement concurrency\-safe counters in a table.
+- [Mutators](<https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-Mutators>) can be used to implement concurrency\-safe counters in a table.
 
 When the ActiveRecord is disabled \(DisableActiveRecord in a [Table](<#Table>) definition\), no Update or accessor methods are generated, but you can access the object fields directly \(no additional Record type is generated\).
 
@@ -154,7 +168,12 @@ The only difference between Select and Delete method configuration is the names 
 
 ### Insert
 
-The Insert DAO method takes two arguments: the [context.Context](<https://pkg.go.dev/context/#Context>), and a pointer to the Record \(or to $\{Model\} directly if [ActiveRecord](<https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-ActiveRecord>) is disabled for a table\).
+The insert operation is represented by two methods:
+
+- Insert, which takes a single record,
+- InsertMulti, which takes a slice of records.
+
+The Insert DAO method takes two arguments: the [context.Context](<https://pkg.go.dev/context/#Context>) and a pointer to the Record \(or to $\{Model\} directly if [ActiveRecord](<https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-ActiveRecord>) is disabled for a table\).
 
 - All the fields except for those having DisableInsert and InitByStorage set to true are INSERTed into a table,
 
@@ -171,6 +190,12 @@ The Insert DAO method takes two arguments: the [context.Context](<https://pkg.go
   UpdateOnConflict may not be used with tables with InitByStorage primary keys.
 
 - You can use InitByStorage with mutators to set an initial value of the counter using DEFAULT in a table schema.
+
+Calling the InsertMulti method is equivalent to calling the Insert method for each record in a slice, but only a single query is performed. Currently, when UpdateOnConflict \_and\_ [Mutators](<https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-Mutators>) are both used, the InsertMulti method isn't generated. All other features described above are supported, including UpdateOnConflict or [Mutators](<https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-Mutators>) used alone.
+
+A successful Insert \(or InsertMulti\) will reset the changed field flags for all the record\(s\) processed. Flags are not reset when InsertMulti fails, regardless of whether some records were successfully inserted.
+
+TODO support [Mutators](<https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-Mutators>) with UpdateOnConflict enabled using \`INSERT ... ON CONFLICT DO UPDATE ... FROM VALUES\` syntax.
 
 ### Update
 
@@ -208,13 +233,15 @@ Mutator methods are:
 - [type OrderDirection](<#OrderDirection>)
 - [type Query](<#Query>)
 - [type QueryBuilder](<#QueryBuilder>)
-  - [func NewQueryBuilder\(sql string\) \*QueryBuilder](<#NewQueryBuilder>)
-  - [func \(qb \*QueryBuilder\) AppendArgs\(arg any\)](<#QueryBuilder.AppendArgs>)
+  - [func NewQueryBuilder\(query string\) \*QueryBuilder](<#NewQueryBuilder>)
+  - [func NewQueryBuilderCap\(query string, argsCap, resultsCap int\) \*QueryBuilder](<#NewQueryBuilderCap>)
+  - [func \(qb \*QueryBuilder\) AppendArgs\(arg ...any\)](<#QueryBuilder.AppendArgs>)
   - [func \(qb \*QueryBuilder\) AppendPlaceholder\(\)](<#QueryBuilder.AppendPlaceholder>)
   - [func \(qb \*QueryBuilder\) AppendPlaceholderNum\(\)](<#QueryBuilder.AppendPlaceholderNum>)
-  - [func \(qb \*QueryBuilder\) AppendResults\(res any\)](<#QueryBuilder.AppendResults>)
-  - [func \(qb \*QueryBuilder\) AppendSQL\(sql string\)](<#QueryBuilder.AppendSQL>)
+  - [func \(qb \*QueryBuilder\) AppendResults\(res ...any\)](<#QueryBuilder.AppendResults>)
+  - [func \(qb \*QueryBuilder\) AppendSQL\(query string\)](<#QueryBuilder.AppendSQL>)
   - [func \(qb \*QueryBuilder\) Args\(\) \[\]any](<#QueryBuilder.Args>)
+  - [func \(qb \*QueryBuilder\) Placeholder\(\) string](<#QueryBuilder.Placeholder>)
   - [func \(qb \*QueryBuilder\) Results\(\) \[\]any](<#QueryBuilder.Results>)
   - [func \(qb \*QueryBuilder\) SQL\(\) string](<#QueryBuilder.SQL>)
   - [func \(qb \*QueryBuilder\) SetResults\(res \[\]any\)](<#QueryBuilder.SetResults>)
@@ -229,7 +256,7 @@ Mutator methods are:
   - [func \(so \*SelectOptions\) UseMaster\(\) bool](<#SelectOptions.UseMaster>)
   - [func \(so \*SelectOptions\) UseReplica\(\) bool](<#SelectOptions.UseReplica>)
 - [type SimpleQuery](<#SimpleQuery>)
-  - [func NewSimpleQuery\(sql string, args, results \[\]any\) \*SimpleQuery](<#NewSimpleQuery>)
+  - [func NewSimpleQuery\(query string, args, results \[\]any\) \*SimpleQuery](<#NewSimpleQuery>)
   - [func \(q \*SimpleQuery\) Args\(\) \[\]any](<#SimpleQuery.Args>)
   - [func \(q \*SimpleQuery\) Results\(\) \[\]any](<#SimpleQuery.Results>)
   - [func \(q \*SimpleQuery\) SQL\(\) string](<#SimpleQuery.SQL>)
@@ -239,7 +266,7 @@ Mutator methods are:
 
 
 <a name="DB"></a>
-## type [DB](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L296-L300>)
+## type [DB](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L300-L304>)
 
 DB describes the database interface required by the code generated by this library. \[pgx.Conn\], \[pgxpool.Pool\], and \[pgx.Tx\] implement this interface.
 
@@ -247,14 +274,14 @@ Note that you can use any other type with the same method set if you wish to use
 
 ```go
 type DB interface {
-    Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
-    QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
-    Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+    Query(ctx context.Context, query string, args ...any) (pgx.Rows, error)
+    QueryRow(ctx context.Context, query string, args ...any) pgx.Row
+    Exec(ctx context.Context, query string, args ...any) (pgconn.CommandTag, error)
 }
 ```
 
 <a name="Field"></a>
-## type [Field](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L202-L247>)
+## type [Field](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L206-L251>)
 
 Field describes special field properties such as InitByStorage or custom raw SQL snippets. Most table fields don't have to be listed here.
 
@@ -308,7 +335,7 @@ type Field struct {
 ```
 
 <a name="Field.Validate"></a>
-### func \(\*Field\) [Validate](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L283>)
+### func \(\*Field\) [Validate](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L287>)
 
 ```go
 func (f *Field) Validate() error
@@ -317,7 +344,7 @@ func (f *Field) Validate() error
 Validate ensures that the Field name is always set.
 
 <a name="Index"></a>
-## type [Index](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L117-L184>)
+## type [Index](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L121-L188>)
 
 Index describes a set of columns used as keys in Select/Delete/Update queries. Strictly speaking, the Index value doesn't have to correspond to the real database indices declared using the \`CREATE INDEX\` query.
 
@@ -393,7 +420,7 @@ type Index struct {
 ```
 
 <a name="Index.KeyStructName"></a>
-### func \(\*Index\) [KeyStructName](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L270>)
+### func \(\*Index\) [KeyStructName](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L274>)
 
 ```go
 func (idx *Index) KeyStructName() string
@@ -402,7 +429,7 @@ func (idx *Index) KeyStructName() string
 KeyStructName returns a key type name if idx is a multi index with multiple keys, and Selector and Deleter aren't both disabled. In other cases, it returns an empty string.
 
 <a name="Index.Validate"></a>
-### func \(\*Index\) [Validate](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L259>)
+### func \(\*Index\) [Validate](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L263>)
 
 ```go
 func (idx *Index) Validate() error
@@ -411,7 +438,7 @@ func (idx *Index) Validate() error
 Validate ensures that Keys are always specified for an [Index](<#Index>).
 
 <a name="Order"></a>
-## type [Order](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L195-L198>)
+## type [Order](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L199-L202>)
 
 Order specifies the \`ORDER BY\` clause for \`SELECT\` queries.
 
@@ -423,7 +450,7 @@ type Order struct {
 ```
 
 <a name="OrderDirection"></a>
-## type [OrderDirection](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L186>)
+## type [OrderDirection](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L190>)
 
 
 
@@ -441,7 +468,7 @@ const (
 ```
 
 <a name="Query"></a>
-## type [Query](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L302-L306>)
+## type [Query](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L306-L310>)
 
 
 
@@ -454,7 +481,7 @@ type Query interface {
 ```
 
 <a name="QueryBuilder"></a>
-## type [QueryBuilder](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L345-L349>)
+## type [QueryBuilder](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L349-L353>)
 
 QueryBuilder is a dynamic query builder. Implements the [Query](<#Query>) interface.
 
@@ -465,25 +492,34 @@ type QueryBuilder struct {
 ```
 
 <a name="NewQueryBuilder"></a>
-### func [NewQueryBuilder](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L353>)
+### func [NewQueryBuilder](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L357>)
 
 ```go
-func NewQueryBuilder(sql string) *QueryBuilder
+func NewQueryBuilder(query string) *QueryBuilder
+```
+
+
+
+<a name="NewQueryBuilderCap"></a>
+### func [NewQueryBuilderCap](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L369>)
+
+```go
+func NewQueryBuilderCap(query string, argsCap, resultsCap int) *QueryBuilder
 ```
 
 
 
 <a name="QueryBuilder.AppendArgs"></a>
-### func \(\*QueryBuilder\) [AppendArgs](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L378>)
+### func \(\*QueryBuilder\) [AppendArgs](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L398>)
 
 ```go
-func (qb *QueryBuilder) AppendArgs(arg any)
+func (qb *QueryBuilder) AppendArgs(arg ...any)
 ```
 
 
 
 <a name="QueryBuilder.AppendPlaceholder"></a>
-### func \(\*QueryBuilder\) [AppendPlaceholder](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L369>)
+### func \(\*QueryBuilder\) [AppendPlaceholder](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L389>)
 
 ```go
 func (qb *QueryBuilder) AppendPlaceholder()
@@ -492,7 +528,7 @@ func (qb *QueryBuilder) AppendPlaceholder()
 
 
 <a name="QueryBuilder.AppendPlaceholderNum"></a>
-### func \(\*QueryBuilder\) [AppendPlaceholderNum](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L374>)
+### func \(\*QueryBuilder\) [AppendPlaceholderNum](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L394>)
 
 ```go
 func (qb *QueryBuilder) AppendPlaceholderNum()
@@ -501,25 +537,25 @@ func (qb *QueryBuilder) AppendPlaceholderNum()
 
 
 <a name="QueryBuilder.AppendResults"></a>
-### func \(\*QueryBuilder\) [AppendResults](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L382>)
+### func \(\*QueryBuilder\) [AppendResults](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L402>)
 
 ```go
-func (qb *QueryBuilder) AppendResults(res any)
+func (qb *QueryBuilder) AppendResults(res ...any)
 ```
 
 
 
 <a name="QueryBuilder.AppendSQL"></a>
-### func \(\*QueryBuilder\) [AppendSQL](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L365>)
+### func \(\*QueryBuilder\) [AppendSQL](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L381>)
 
 ```go
-func (qb *QueryBuilder) AppendSQL(sql string)
+func (qb *QueryBuilder) AppendSQL(query string)
 ```
 
 
 
 <a name="QueryBuilder.Args"></a>
-### func \(\*QueryBuilder\) [Args](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L398>)
+### func \(\*QueryBuilder\) [Args](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L418>)
 
 ```go
 func (qb *QueryBuilder) Args() []any
@@ -527,8 +563,17 @@ func (qb *QueryBuilder) Args() []any
 
 
 
+<a name="QueryBuilder.Placeholder"></a>
+### func \(\*QueryBuilder\) [Placeholder](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L385>)
+
+```go
+func (qb *QueryBuilder) Placeholder() string
+```
+
+
+
 <a name="QueryBuilder.Results"></a>
-### func \(\*QueryBuilder\) [Results](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L402>)
+### func \(\*QueryBuilder\) [Results](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L422>)
 
 ```go
 func (qb *QueryBuilder) Results() []any
@@ -537,7 +582,7 @@ func (qb *QueryBuilder) Results() []any
 
 
 <a name="QueryBuilder.SQL"></a>
-### func \(\*QueryBuilder\) [SQL](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L390>)
+### func \(\*QueryBuilder\) [SQL](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L410>)
 
 ```go
 func (qb *QueryBuilder) SQL() string
@@ -546,7 +591,7 @@ func (qb *QueryBuilder) SQL() string
 
 
 <a name="QueryBuilder.SetResults"></a>
-### func \(\*QueryBuilder\) [SetResults](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L386>)
+### func \(\*QueryBuilder\) [SetResults](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L406>)
 
 ```go
 func (qb *QueryBuilder) SetResults(res []any)
@@ -555,7 +600,7 @@ func (qb *QueryBuilder) SetResults(res []any)
 
 
 <a name="SelectOptionFunc"></a>
-## type [SelectOptionFunc](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L431>)
+## type [SelectOptionFunc](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L451>)
 
 SelectOptionFunc represents options of Select query methods.
 
@@ -564,7 +609,7 @@ type SelectOptionFunc func(*SelectOptions)
 ```
 
 <a name="WithLimit"></a>
-### func [WithLimit](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L434>)
+### func [WithLimit](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L454>)
 
 ```go
 func WithLimit(limit int) SelectOptionFunc
@@ -573,7 +618,7 @@ func WithLimit(limit int) SelectOptionFunc
 WithLimit overrides the DefaultLimit specified for an [Index](<#Index>).
 
 <a name="WithOffset"></a>
-### func [WithOffset](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L441>)
+### func [WithOffset](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L461>)
 
 ```go
 func WithOffset(offset int) SelectOptionFunc
@@ -582,7 +627,7 @@ func WithOffset(offset int) SelectOptionFunc
 WithOffset specifies an offset for Select queries.
 
 <a name="WithReplica"></a>
-### func [WithReplica](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L453>)
+### func [WithReplica](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L473>)
 
 ```go
 func WithReplica(use bool) SelectOptionFunc
@@ -597,7 +642,7 @@ WithReplica specifies whether a replica should be used to perform a query:
 If no replica\(s\) are configured, a master will be used instead.
 
 <a name="SelectOptions"></a>
-## type [SelectOptions](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L407-L412>)
+## type [SelectOptions](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L427-L432>)
 
 SelectOptions are intended to be used from unit tests and/or generated code. Do not use it directly.
 
@@ -608,7 +653,7 @@ type SelectOptions struct {
 ```
 
 <a name="NewSelectOptions"></a>
-### func [NewSelectOptions](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L464>)
+### func [NewSelectOptions](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L484>)
 
 ```go
 func NewSelectOptions(optFuncs ...SelectOptionFunc) *SelectOptions
@@ -617,7 +662,7 @@ func NewSelectOptions(optFuncs ...SelectOptionFunc) *SelectOptions
 NewSelectOptions is intended to be used from unit tests and/or generated code. Do not use it directly.
 
 <a name="SelectOptions.Limit"></a>
-### func \(\*SelectOptions\) [Limit](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L414>)
+### func \(\*SelectOptions\) [Limit](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L434>)
 
 ```go
 func (so *SelectOptions) Limit() int
@@ -626,7 +671,7 @@ func (so *SelectOptions) Limit() int
 
 
 <a name="SelectOptions.Offset"></a>
-### func \(\*SelectOptions\) [Offset](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L418>)
+### func \(\*SelectOptions\) [Offset](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L438>)
 
 ```go
 func (so *SelectOptions) Offset() int
@@ -635,7 +680,7 @@ func (so *SelectOptions) Offset() int
 
 
 <a name="SelectOptions.UseMaster"></a>
-### func \(\*SelectOptions\) [UseMaster](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L426>)
+### func \(\*SelectOptions\) [UseMaster](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L446>)
 
 ```go
 func (so *SelectOptions) UseMaster() bool
@@ -644,7 +689,7 @@ func (so *SelectOptions) UseMaster() bool
 
 
 <a name="SelectOptions.UseReplica"></a>
-### func \(\*SelectOptions\) [UseReplica](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L422>)
+### func \(\*SelectOptions\) [UseReplica](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L442>)
 
 ```go
 func (so *SelectOptions) UseReplica() bool
@@ -653,7 +698,7 @@ func (so *SelectOptions) UseReplica() bool
 
 
 <a name="SimpleQuery"></a>
-## type [SimpleQuery](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L316-L320>)
+## type [SimpleQuery](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L320-L324>)
 
 SimpleQuery is a "static" query that isn't indended for modification. Implements the [Query](<#Query>) interface.
 
@@ -664,16 +709,16 @@ type SimpleQuery struct {
 ```
 
 <a name="NewSimpleQuery"></a>
-### func [NewSimpleQuery](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L324>)
+### func [NewSimpleQuery](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L328>)
 
 ```go
-func NewSimpleQuery(sql string, args, results []any) *SimpleQuery
+func NewSimpleQuery(query string, args, results []any) *SimpleQuery
 ```
 
 
 
 <a name="SimpleQuery.Args"></a>
-### func \(\*SimpleQuery\) [Args](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L336>)
+### func \(\*SimpleQuery\) [Args](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L340>)
 
 ```go
 func (q *SimpleQuery) Args() []any
@@ -682,7 +727,7 @@ func (q *SimpleQuery) Args() []any
 
 
 <a name="SimpleQuery.Results"></a>
-### func \(\*SimpleQuery\) [Results](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L340>)
+### func \(\*SimpleQuery\) [Results](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L344>)
 
 ```go
 func (q *SimpleQuery) Results() []any
@@ -691,7 +736,7 @@ func (q *SimpleQuery) Results() []any
 
 
 <a name="SimpleQuery.SQL"></a>
-### func \(\*SimpleQuery\) [SQL](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L332>)
+### func \(\*SimpleQuery\) [SQL](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L336>)
 
 ```go
 func (q *SimpleQuery) SQL() string
@@ -700,7 +745,7 @@ func (q *SimpleQuery) SQL() string
 
 
 <a name="StringWriter"></a>
-## type [StringWriter](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L309-L312>)
+## type [StringWriter](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L313-L316>)
 
 StringWriter is implemented by [strings.Builder](<https://pkg.go.dev/strings/#Builder>) and [bytes.Buffer](<https://pkg.go.dev/bytes/#Buffer>), among others.
 
@@ -712,7 +757,7 @@ type StringWriter interface {
 ```
 
 <a name="Table"></a>
-## type [Table](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L37-L112>)
+## type [Table](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L41-L116>)
 
 Table describes a database table. [github.com/my\\\-mail\\\-ru/go\\\-adv\\\-pg/cmd/adv\\\-pg](<https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg/cmd/adv-pg/>) code generator scans the source file for global variable declarations of this type. The variable can have a name or be anonymous \(\`\_\`\), and this doesn't affect the code generation result.
 
@@ -816,7 +861,7 @@ type Table struct {
 ```
 
 <a name="Table.Validate"></a>
-### func \(\*Table\) [Validate](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L250>)
+### func \(\*Table\) [Validate](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L254>)
 
 ```go
 func (t *Table) Validate() error
@@ -834,7 +879,7 @@ Package advpgconn \- configuration and initialization of pgx connections and con
 
 ### OnlineConf
 
-This package uses OnlineConf to configure connections and connection pools. The typical configuration layout is:
+This package uses the OnlineConf to configure connections and connection pools. The typical configuration layout is:
 
 ```
 confRoot, err := onlineconf.OpenModule("")
@@ -842,7 +887,7 @@ dbSubtree := confRoot.Subtree("/project/db")
 pool, err := advpgconn.NewPool(ctx, dbSubtree) // uses /project/db/base and so on
 ```
 
-The [OnlineConf](<#OnlineConf>) interface assumes the [github.com/onlineconf/onlineconf\\\-go/v2](<https://pkg.go.dev/github.com/onlineconf/onlineconf-go/v2/>) llibrary, but you may use any compatible implementation \(or test mock\).
+The [OnlineConf](<#OnlineConf>) interface assumes the [github.com/onlineconf/onlineconf\\\-go/v2](<https://pkg.go.dev/github.com/onlineconf/onlineconf-go/v2/>) llibrary, but you may use any compatible implementation \(or a test mock\).
 
 Connection and pool settings are compatible with the Perl implementation. Durations can be specified as integer seconds or [time.Duration](<https://pkg.go.dev/time/#Duration>) syntax \(which obviously isn't compatible with Perl\).
 
@@ -850,20 +895,22 @@ Connection and pool settings are compatible with the Perl implementation. Durati
 
 The following settings are used by [NewConn](<#NewConn>) \(which in turn calls [LoadConnConfigs](<#LoadConnConfigs>)\):
 
-- /host \- the database master host with port,
-- /replica \- the database replica\(s\) host with port. Multiple comma or semicolon host names are supported,
-- /base \- the database name,
-- /user,
-- /pass,
+- /host \- the database master host with port. Mandatory.
+- /replica \- the database replica\(s\) host with port. Multiple comma or semicolon host names are supported. Optional.
+- /base \- the database name. Mandatory.
+- /user \- Mandatory.
+- /pass \- Mandatory.
 - /timeout \- query and statement timeout. Default: [DefaultTimeout](<#DefaultTimeout>) \(30s\),
-- /connect\_timeout \- connection timeout. Default: timeout setting,
-- /set\_statement\_timeout \- perform an SET statement\_timeout query after establishing the new connection. Default: don't set a statement timeout \(0\).
+- /connect\_timeout \- connection timeout. Default: the /timeout setting,
+- /set\_statement\_timeout \- perform the \`SET statement\_timeout\` query after establishing the new connection. Default: don't set a statement timeout \(0\).
 
-Note that round\-robin replica balancing method is not yet supported. The connection to the next host on this list is performed only when the previous one isn't available.
+When the replica list is specified, a master is used as the last fallback when all the replicas aren't available.
+
+Note that the round\-robin replica balancing method is not yet supported. The connection to the next host on this list is performed only when the previous one has failed.
 
 DefaultQueryExecMode is set to SimpleProtocol.
 
-/timeout and /set\_statement\_timeout are checked every time a new connection is established or a query is executed. To change any other connection setting, you have to restart the application \(TODO support configuration reloading\).
+/timeout and /set\_statement\_timeout are checked every time a new connection is established or a query is executed. To change any other connection setting, you have to restart the application \(TODO support full configuration reloading\).
 
 ### Pool settings
 
@@ -872,7 +919,7 @@ All of the above, plus:
 - /pool\_max\_conns \- maximum pool size. Fallback: /pool\_size \(for Perl compatibility\). Default: [DefaultPoolMaxConns](<#DefaultTimeout>) \(10\),
 - /pool\_min\_conns \- minimum pool size. Default: DefaultPoolMinConns \(1\),
 - /pool\_min\_idle\_conns \- minimum number of idle connections in the pool. Default: DefaultPoolMinIdleConns \(0\),
-- /pool\_max\_conn\_lifetime \- duration since creation after which a connection will be automatically closed. Default: not set.
+- /pool\_max\_conn\_lifetime \- duration since the connection creation after which a connection will be automatically closed. Default: not set.
 - /pool\_max\_conn\_lifetime\_jitter \- maximum random increment for /pool\_max\_conn\_lifetime. Default: not set.
 - /pool\_max\_conn\_idle\_time \- Default: not set.
 - /pool\_health\_check\_period \- duration between connection checks. Default: not set.
@@ -889,9 +936,9 @@ These settings can be set per\-table:
 - /table/$\{TableName\}/timeout \- query timeout. Overrides /timeout.
 - /table/$\{TableName\}/force\_replica\_usage \- use a replica for Select queries even if it's not enabled explicitly with \[advpg.WithReplica\].
 
-Note that the /force\_replica\_usage setting isn't compatible with similarly named Perl setting because the Perl implementation uses language\-specific package names instead of table names used by this library.
+Note that the /force\_replica\_usage setting isn't compatible with the similarly named Perl setting because the Perl implementation uses language\-specific package names instead of table names used by this library.
 
-Per\-table settings are checked on\-the\-fly, so no application restart is required to change these.
+Per\-table settings are checked on\-the\-fly, so no application restart is required to change them.
 
 ## Index
 
@@ -938,7 +985,7 @@ const (
 ```
 
 <a name="LoadConnConfigs"></a>
-## func [LoadConnConfigs](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/config.go#L147>)
+## func [LoadConnConfigs](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/config.go#L149>)
 
 ```go
 func LoadConnConfigs(config OnlineConf) (masterConf, replicaConf *pgx.ConnConfig, err error)
@@ -947,7 +994,7 @@ func LoadConnConfigs(config OnlineConf) (masterConf, replicaConf *pgx.ConnConfig
 LoadConnConfigs loads the master and the replica\(s\) configs from the OnlineConf.
 
 <a name="LoadPoolConfigs"></a>
-## func [LoadPoolConfigs](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/config.go#L251>)
+## func [LoadPoolConfigs](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/config.go#L253>)
 
 ```go
 func LoadPoolConfigs(config OnlineConf) (masterConf, replicaConf *pgxpool.Config, err error)
@@ -956,13 +1003,13 @@ func LoadPoolConfigs(config OnlineConf) (masterConf, replicaConf *pgxpool.Config
 LoadPoolConfigs loads the master and the replica\(s\) pool configs from the OnlineConf.
 
 <a name="QueryInfoCtx"></a>
-## func [QueryInfoCtx](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L277>)
+## func [QueryInfoCtx](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L279>)
 
 ```go
 func QueryInfoCtx(ctx context.Context, table, index string) context.Context
 ```
 
-
+QueryInfoCtx is just a wrapper for \[pgxmetrics.QueryInfo.WithContext\]. QueryInfoCtx is intended to be used from generated code to reduce the import count.
 
 <a name="ReplicaByOpt"></a>
 ## func [ReplicaByOpt](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L260>)
@@ -971,7 +1018,7 @@ func QueryInfoCtx(ctx context.Context, table, index string) context.Context
 func ReplicaByOpt(db advpg.DB, opt *advpg.SelectOptions, table string) advpg.DB
 ```
 
-ReplicaByOpt returns the master or the replica connection \(or pool\) based on the \[advpg.WithReplica\] option and /table/TableName/force\_replica\_usage setting.
+ReplicaByOpt returns the master or the replica connection \(or pool\) based on the \[advpg.WithReplica\] option and the /table/TableName/force\_replica\_usage setting.
 
 <a name="Conn"></a>
 ## type [Conn](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L23-L27>)
@@ -1021,7 +1068,7 @@ Replica returns the replica connection if it's configured. The master connection
 func (c *Conn) ReplicaPerTable(table string) advpg.DB
 ```
 
-ReplicaPerTable checks /table/TableName/force\_replica\_usage setting in the OnlineConf to determine whether the replica should be used. The master connection is returned otherwise.
+ReplicaPerTable checks the /table/TableName/force\_replica\_usage setting in the OnlineConf to determine whether the replica should be used. The master connection is returned otherwise.
 
 <a name="ConnOptionFunc"></a>
 ## type [ConnOptionFunc](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L57>)
@@ -1115,7 +1162,7 @@ Replica returns the replica pool if it's configured. The master pool is returned
 func (p *Pool) ReplicaPerTable(table string) advpg.DB
 ```
 
-ReplicaPerTable checks /table/TableName/force\_replica\_usage setting in the OnlineConf to determine whether the replica should be used. The master pool is returned otherwise.
+ReplicaPerTable checks the /table/TableName/force\_replica\_usage setting in the OnlineConf to determine whether the replica should be used. The master pool is returned otherwise.
 
 <a name="PoolOptionFunc"></a>
 ## type [PoolOptionFunc](<https://github.com/my-mail-ru/go-adv-pg/blob/master/conn/conn.go#L143>)

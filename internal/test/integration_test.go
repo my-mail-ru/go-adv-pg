@@ -3,19 +3,21 @@
 package advpgtest
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"errors"
 	"fmt"
 	"os"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/google/go-cmp/cmp"
-	"github.com/google/go-cmp/cmp/cmpopts"
+	gocmp "github.com/google/go-cmp/cmp"
+	gocmpopts "github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/onlineconf/onlineconf-go/v2"
@@ -24,6 +26,8 @@ import (
 	advpg "github.com/my-mail-ru/go-adv-pg"
 	advpgconn "github.com/my-mail-ru/go-adv-pg/conn"
 )
+
+const insertMultiCount = 100
 
 func must(t *testing.T, err error) {
 	if err != nil {
@@ -213,9 +217,7 @@ func TestUserDAO(t *testing.T) {
 
 		want := []UserRecord{*user2, user1}
 
-		if diff := cmp.Diff(want, got, cmpopts.EquateComparable(UserRecord{})); diff != "" {
-			t.Fatal("result mismatch (-want +got):\n" + diff)
-		}
+		cmpSlices(t, got, want)
 	})
 
 	t.Run("Delete by non-existent key", func(t *testing.T) {
@@ -254,6 +256,42 @@ func TestUserDAO(t *testing.T) {
 		}
 	})
 
+	t.Run("InsertMulti", func(t *testing.T) {
+		users := make([]UserRecord, insertMultiCount)
+		for i := range insertMultiCount {
+			users[i] = *(User{
+				Name: "TestInsertMulti " + strconv.Itoa(i),
+				Type: i,
+			}.Record())
+		}
+
+		must(t, userDAO.InsertMulti(ctx, users))
+
+		for i := range insertMultiCount - 1 {
+			if users[i].ID() >= users[i+1].ID() {
+				t.Fatalf("user IDs aren't monotonically increasing: users[%d].ID=%d, users[%d].ID=%d", i, users[i].ID(), i+1, users[i+1].ID())
+			}
+		}
+
+		keys := make([]SelectMultiByIDTypeKey, len(users))
+		for i, user := range users {
+			keys[i] = SelectMultiByIDTypeKey{
+				ID:   user.ID(),
+				Type: user.Type(),
+			}
+		}
+
+		gotUsers, err := userDAO.SelectMultiByIDType(ctx, keys)
+
+		must(t, err)
+
+		slices.SortFunc(gotUsers, func(x, y UserRecord) int {
+			return cmp.Compare(x.ID(), y.ID())
+		})
+
+		cmpSlices(t, gotUsers, users)
+	})
+
 	checkMetrics(t, ms, expectedMetrics{
 		{
 			table:   "users",
@@ -269,11 +307,11 @@ func TestUserDAO(t *testing.T) {
 			table:   "users",
 			index:   "IDType",
 			command: "SELECT",
-		}: 2,
+		}: 3,
 		{
 			table:   "users",
 			command: "INSERT",
-		}: 2,
+		}: 3,
 		{
 			table:   "users",
 			command: "UPDATE",
@@ -376,6 +414,14 @@ func createUserID(t *testing.T, db advpg.DB) int {
 	})
 
 	return userID
+}
+
+func cmpSlices[T any](t *testing.T, got, want []T) {
+	var val T
+
+	if diff := gocmp.Diff(want, got, gocmpopts.EquateComparable(val)); diff != "" {
+		t.Fatal("result mismatch (-want +got):\n" + diff)
+	}
 }
 
 func TestExtLinkDAO(t *testing.T) {
@@ -557,6 +603,50 @@ func TestSeenDAO(t *testing.T) {
 		{
 			table:   "seen",
 			command: "UPDATE",
+		}: 1,
+	})
+}
+
+func TestUserOptionsDAO(t *testing.T) {
+	ctx, db, ms := connectDB(t)
+	optDAO := NewUserOptionsDAO(db)
+	userID := createUserID(t, db)
+
+	t.Run("InsertMulti", func(t *testing.T) {
+		opts := make([]UserOptionsRecord, insertMultiCount)
+		for i := range insertMultiCount {
+			opts[i] = *(UserOptions{
+				UserID:   userID,
+				OptionID: i,
+				Flag:     i%2 != 0,
+			}.Record())
+		}
+
+		must(t, optDAO.InsertMulti(ctx, opts))
+
+		opts[insertMultiCount/2].SetFlag(!opts[insertMultiCount/2].Flag())
+		opts[insertMultiCount/4].SetOption("CHANGED")
+		must(t, optDAO.InsertMulti(ctx, opts))
+
+		gotOpts, err := optDAO.SelectByUserID(ctx, userID)
+
+		must(t, err)
+		cmpSlices(t, gotOpts, opts)
+	})
+
+	checkMetrics(t, ms, expectedMetrics{
+		{
+			table:   "users",
+			command: "INSERT",
+		}: 1,
+		{
+			table:   "user_options",
+			command: "INSERT",
+		}: 2,
+		{
+			table:   "user_options",
+			index:   "UserID",
+			command: "SELECT",
 		}: 1,
 	})
 }

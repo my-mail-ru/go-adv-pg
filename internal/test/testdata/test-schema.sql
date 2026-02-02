@@ -41,3 +41,12 @@ CREATE TABLE seen (
 	user_id INTEGER NOT NULL PRIMARY KEY REFERENCES users,
 	seen_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+CREATE TABLE user_options (
+	user_id    INTEGER NOT NULL REFERENCES users,
+	option_id  INTEGER NOT NULL,
+	flag       BOOLEAN NOT NULL,
+	option     TEXT NOT NULL DEFAULT 'not set',
+
+	PRIMARY KEY (user_id, option_id)
+);

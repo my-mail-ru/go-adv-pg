@@ -3,28 +3,40 @@
 {{ end }}
 package {{.Package}}
 
+{{ define "insert_arg" -}}
+	{{- if .IsUpsertMutator -}}
+		{{.GoExpr}} + model.mut{{to_upper_camel .GoName}}
+	{{- else if .EnableMutators -}}
+		model.mut{{to_upper_camel .GoName}}
+	{{- else -}}
+		{{.GoExpr}}
+	{{- end -}}
+{{- end -}}
+
 {{ define "insert_args" -}}
-		[]any{
-			{{- range $i, $col := .IterateInsertArgs -}}
-				{{ if $i }}, {{ end -}}
-				{{- if $col.IsUpsertMutator -}}
-					{{$col.GoExpr}} + model.mut{{to_upper_camel $col.GoName}}
-				{{- else if $col.EnableMutators -}}
-					model.mut{{to_upper_camel $col.GoName}}
-				{{- else -}}
-					{{$col.GoExpr}}
-				{{- end -}}
-			{{- end -}}
-		}
+	{{- range $i, $col := .IterateInsertArgs -}}
+		{{ if $i }}, {{ end -}}
+		{{- template "insert_arg" $col -}}
+	{{- end -}}
+{{- end -}}
+
+{{ define "insert_args_literal" -}}
+	[]any{
+		{{- template "insert_args" . -}}
+	}
 {{- end -}}
 
 {{ define "results" -}}
-		[]any{
-			{{- range $i, $col := . -}}
-				{{ if $i }}, {{ end -}}
-				&{{$col.GoExpr}}
-			{{- end -}}
-		}
+	{{- range $i, $col := . -}}
+		{{ if $i }}, {{ end -}}
+		&{{$col.GoExpr}}
+	{{- end -}}
+{{- end -}}
+
+{{ define "results_literal" -}}
+	[]any{
+		{{- template "results" . -}}
+	}
 {{- end -}}
 
 {{ define "sql_value" -}}
@@ -78,17 +90,13 @@ import (
 const (
 	sqlSelect{{$model.GoName}} = `SELECT
 		{{- range $i, $col := $model.Columns }}{{ if $i }},{{ end }} {{ template "sql_result" $col }}{{ end }} FROM {{$model.Table.Table}}`
-	sqlInsert{{.GoName}} = `INSERT INTO {{$model.Table.Table}} (
+	sqlInsertHead{{$model.GoName}} = `INSERT INTO {{$model.Table.Table}} (
 			{{- range $i, $col := $model.InsertValueColumns -}}
 				{{- if $i }}, {{ end -}}
 				{{$col.ColumnName}}
 			{{- end -}}
-		) VALUES (
-			{{- range $i, $col := $model.InsertValueColumns -}}
-				{{- if $i }}, {{ end -}}
-				{{- template "sql_value" sql_value_args $col $i -}}
-			{{- end -}}
-		)
+		) VALUES `
+	sqlInsertTail{{$model.GoName}} = `
 		{{- if or $model.UpdateOnConflict $model.OnConflictDoNothing }} ON CONFLICT (
 			{{- range $i, $col := $model.PrimaryKeyColumns -}}
 				{{- if $i }}, {{ end -}}
@@ -110,6 +118,12 @@ const (
 		{{- if $model.InsertResultColumns }} RETURNING
 			{{- range $i, $col := $model.InsertResultColumns }}{{ if $i }},{{ end }} {{ template "sql_result" $col }}{{ end }}
 		{{- end }}`
+	sqlInsert{{$model.GoName}} = sqlInsertHead{{$model.GoName}} + `(
+			{{- range $i, $col := $model.InsertValueColumns -}}
+				{{- if $i }}, {{ end -}}
+				{{- template "sql_value" sql_value_args $col $i -}}
+			{{- end -}}
+		)` + sqlInsertTail{{$model.GoName}}
 	{{- if $model.UpdateValueColumns }}
 		sqlFullUpdate{{$model.GoName}} = `UPDATE {{$model.Table.Table}} SET
 			{{- range $i, $col := $model.UpdateValueColumns -}}
@@ -234,7 +248,7 @@ func (*{{$model.RecordType}}) Table() string {
 					{{- if $method.NeedResults }}{{ template "order_by" $model.IterateIndexOrder $idx }}{{ end -}}
 				`)
 				{{ if $method.NeedResults -}}
-				q.SetResults({{ template "results" $model.Columns }})
+				q.SetResults({{ template "results_literal" $model.Columns }})
 				{{- end }}
 
 				return q
@@ -304,7 +318,7 @@ func (*{{$model.RecordType}}) Table() string {
 								{{- end -}}
 							},
 					{{- if $method.NeedResults }}
-						{{ template "results" $model.Columns }},
+						{{ template "results_literal" $model.Columns }},
 					{{- else }}
 						nil,
 					{{- end }}
@@ -385,8 +399,8 @@ func (*{{$model.RecordType}}) Table() string {
 func (model *{{$model.RecordType}}) queryInsert() *{{$.AdvPgPkg}}.SimpleQuery {
 	return {{$.AdvPgPkg}}.NewSimpleQuery(
 		sqlInsert{{$model.GoName}},
-		{{ template "insert_args" $model }},
-		{{ template "results" $model.InsertResultColumns }},
+		{{ template "insert_args_literal" $model }},
+		{{ template "results_literal" $model.InsertResultColumns }},
 	)
 }
 
@@ -403,8 +417,104 @@ func (dao {{$model.DAO}}) Insert(ctx context.Context, data *{{$model.RecordType}
 	{{- else -}}
 		_, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
 	{{- end }}
+
+	{{ if not $model.DisableActiveRecord -}}
+		if err == nil {
+			data.reset()
+		}
+
+	{{ end -}}
 	return err
 }
+
+{{ if not (and $model.UpdateOnConflict $model.MutatorColumns) -}}
+	func queryInsertMulti{{$model.GoName}}(models []{{$model.RecordType}}) *{{$.AdvPgPkg}}.QueryBuilder {
+		if len(models) == 0 {
+			return &{{$.AdvPgPkg}}.QueryBuilder{}
+		}
+
+		q := {{$.AdvPgPkg}}.NewQueryBuilderCap(sqlInsertHead{{$model.GoName}}, {{len $model.InsertValueColumns}}*len(models), {{len $model.InsertResultColumns}}*len(models))
+
+		for i, model := range models {
+			if i == 0 {
+				q.AppendSQL("(")
+			} else {
+				q.AppendSQL(",(")
+			}
+
+			{{ range $i, $col := $model.IterateInsertArgsVals -}}
+				{{- if $i -}}
+					q.AppendSQL(",")
+				{{ end }}
+
+				{{ if $col.SQLValue -}}
+					q.AppendSQL(strings.ReplaceAll({{quote $col.SQLValue}}, "%s", q.Placeholder()))
+				{{ else -}}
+					q.AppendPlaceholder()
+				{{ end -}}
+				q.AppendArgs({{ template "insert_arg" $col }})
+			{{ end -}}
+			q.AppendSQL(")")
+
+			q.AppendResults({{ template "results" $model.InsertMultiResultColumns }})
+		}
+
+		q.AppendSQL(sqlInsertTail{{$model.GoName}})
+
+		return q
+	}
+
+	func (dao {{$model.DAO}}) InsertMulti(ctx context.Context, records []{{$model.RecordType}}) error {
+		ctx = {{$.AdvPgConnPkg}}.QueryInfoCtx(ctx, {{quote $model.Table.Table}}, "")
+		q := queryInsertMulti{{$model.GoName}}(records)
+		{{ if $model.InsertResultColumns -}}
+			rows, err :=dao.db.Query(ctx, q.SQL(), q.Args()...)
+			defer rows.Close()
+
+			if err == nil {
+				results := q.Results()
+				from := 0
+				to := {{len $model.InsertResultColumns}}
+
+				for rows.Next() {
+					if err = rows.Scan(results[from:to]...); err != nil {
+						break
+					}
+
+					from = to
+					to += {{len $model.InsertResultColumns}}
+				}
+
+				if err == nil {
+					err = rows.Err()
+				}
+
+				if to < len(results) {
+					err = fmt.Errorf("{{$model.DAO}}.InsertMulti: got %d records, but %d was expected", to, len(results))
+				}
+			}
+			{{ if $model.OnConflictDoNothing -}}
+
+				if errors.Is(err, sql.ErrNoRows) {
+					err = nil
+				}
+			{{ end -}}
+		{{- else -}}
+			_, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
+		{{- end }}
+
+		{{ if not $model.DisableActiveRecord -}}
+			if err == nil {
+				for i := range records {
+					records[i].reset()
+				}
+			}
+
+		{{ end -}}
+		return err
+	}
+
+{{ end -}}
 
 {{ if $model.UpdateValueColumns -}}
 	func (model *{{$model.RecordType}}) queryFullUpdate() *{{$.AdvPgPkg}}.SimpleQuery {
@@ -427,7 +537,7 @@ func (dao {{$model.DAO}}) Insert(ctx context.Context, data *{{$model.RecordType}
 					, {{$col.GoExpr}}
 				{{- end -}}
 			},
-			{{ template "results" $model.UpdateResultColumns }},
+			{{ template "results_literal" $model.UpdateResultColumns }},
 		)
 	}
 
@@ -495,7 +605,7 @@ func (dao {{$model.DAO}}) Insert(ctx context.Context, data *{{$model.RecordType}
 
 		{{- if $model.UpdateResultColumns }}
 			q.AppendSQL(sqlUpdateReturning{{$model.GoName}})
-			q.SetResults({{ template "results" $model.UpdateResultColumns }})
+			q.SetResults({{ template "results_literal" $model.UpdateResultColumns }})
 		{{- end }}
 
 		return q
@@ -511,7 +621,7 @@ func (dao {{$model.DAO}}) Insert(ctx context.Context, data *{{$model.RecordType}
 						model.data.{{$col.GoName}}
 					{{- end -}}
 				},
-				{{ template "results" $model.MutatorColumns }},
+				{{ template "results_literal" $model.MutatorColumns }},
 			)
 		}
 
