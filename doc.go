@@ -220,6 +220,9 @@ supported, including UpdateOnConflict or [Mutators] used alone.
 A successful Insert (or InsertMulti) will reset the changed field flags for all the record(s) processed.
 Flags are not reset when InsertMulti fails, regardless of whether some records were successfully inserted.
 
+Note that InsertMulti with InitByStorage depends on the non-documented but widely used PostgreSQL behavior
+of the `INSERT ... RETURNING` query: rows are returned in the same order as specified in `VALUES`.
+
 TODO support [Mutators] with UpdateOnConflict enabled using `INSERT ... ON CONFLICT DO UPDATE ... FROM VALUES` syntax.
 
 # Update
