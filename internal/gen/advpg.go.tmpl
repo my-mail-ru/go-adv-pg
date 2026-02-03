@@ -148,6 +148,14 @@ const (
 	{{ end -}}
 )
 
+{{- if $model.IsImplicit }}
+	type {{$model.GoName}} struct {
+		{{ range $col := $model.Columns -}}
+			{{$col.GoName}} {{$col.GoType}} `db:{{quote $col.ColumnName}}`
+		{{ end -}}
+	}
+{{ end -}}
+
 {{- if not $model.DisableActiveRecord }}
 	type {{$model.RecordType}} struct {
 		{{- if $model.UpdateValueColumns }}

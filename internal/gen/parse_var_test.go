@@ -122,6 +122,8 @@ func TestStructVarParser(t *testing.T) {
 		t.Fatal("StructVarParser.Parse:", err)
 	}
 
+	tableDecl.Model = &advpggen.ModelName{Name: "MyTable"}
+
 	want := map[string][]any{
 		"Table": []any{&tableDecl},
 		"Index": []any{&singleIndex, singleIdxByPointer, &multiIndex[0], &multiIndex[1], multiIdxByPointer[0], multiIdxByPointer[1]},
@@ -237,8 +239,12 @@ func TestStructVarParserErrors(t *testing.T) {
 		wantErr: "internal error",
 	}, {
 		name:    "unknown table literal type",
+		src:     preambleTable + "Model: []int{}}",
+		wantErr: "ast.Ident (i.e. a simple type name) is expected",
+	}, {
+		name:    "unknown table BasicLit type",
 		src:     preambleTable + "Model: 123}",
-		wantErr: "TableName{} is expected",
+		wantErr: "STRING is expected",
 	}, {
 		name:    "unknown table literal pointer type",
 		src:     preambleTable + "Model: &1}",

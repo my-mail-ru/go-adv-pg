@@ -17,7 +17,7 @@ import (
 //  - []AnyTypeInVarSpec:          ast.CompositeLit
 //  - bool:                        ast.Ident{Name: "true or false"}
 //  - advpg.OrderDirection:        ast.SelectorExpr{"advpg.OrderAsc or advpg.OrderDesc"}
-//  - any:                         Type{} or &Type{}, the type name is stored as string
+//  - any:                         Type{}, or &Type{}, or string. Stored as [ModelName].
 //
 // advpg package name is determined dynamically
 
@@ -30,6 +30,11 @@ type VarSpec struct {
 	TypePkg  string
 	TypeName string
 	New      func() any
+}
+
+type ModelName struct {
+	Name     string
+	IsString bool // otherwise it's a Type{} or &Type{} literal
 }
 
 type Validator interface {
@@ -187,6 +192,7 @@ func parseStructFields(fset FileSet, lit *ast.CompositeLit, structVal reflect.Va
 
 		default:
 			if field.Type() == anyT {
+				// model name defined as a type literal
 				if err := parseTypeName(fset, valExpr, field, typeName, identName); err != nil {
 					return err
 				}
@@ -328,6 +334,18 @@ func parseTypeName(fset FileSet, expr ast.Expr, val reflect.Value, typeName, ide
 	)
 
 	switch anyVal := expr.(type) {
+	case *ast.BasicLit: // implicit declaration (i.e. a table struct has to be generated)
+		name, err := getBasicLit(fset, anyVal, token.STRING, typeName, identName)
+		if err != nil {
+			return err
+		}
+
+		val.Set(reflect.ValueOf(&ModelName{
+			Name:     name,
+			IsString: true,
+		}))
+
+		return nil
 	case *ast.UnaryExpr: // the table can be declared using a pointer to its type....
 		if anyVal.Op != token.AND {
 			return fmt.Errorf("adv-pg: %s: %s.%s: parsing `any` val: got %v, but & is expected", fset.Pos(expr), typeName, identName, anyVal.Op)
@@ -348,7 +366,7 @@ func parseTypeName(fset FileSet, expr ast.Expr, val reflect.Value, typeName, ide
 		return fmt.Errorf("adv-pg: %s: %s.%s: parsing any val: got %T, but ast.Ident (i.e. a simple type name) is expected", fset.Pos(expr), typeName, identName, expr)
 	}
 
-	val.Set(reflect.ValueOf(goType.Name))
+	val.Set(reflect.ValueOf(&ModelName{Name: goType.Name}))
 
 	return nil
 }

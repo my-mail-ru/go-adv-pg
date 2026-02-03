@@ -118,13 +118,8 @@ var _ = advpg.Table{
 }
 
 // Seen is used to test OnConflictDoNothing.
-type Seen struct {
-	UserID int       `db:"user_id"`
-	SeenAt time.Time `db:"seen_at"`
-}
-
 var _ = advpg.Table{
-	Model:               Seen{},
+	Model:               "Seen",
 	Table:               "seen",
 	OnConflictDoNothing: true,
 	Indices: []advpg.Index{{
@@ -132,7 +127,13 @@ var _ = advpg.Table{
 		IsPrimaryKey: true,
 	}},
 	Fields: []advpg.Field{{
+		Field:  "UserID",
+		Column: "user_id",
+		GoType: "int",
+	}, {
 		Field:         "SeenAt",
+		Column:        "seen_at",
+		GoType:        "time.Time",
 		InitByStorage: true,
 	}},
 }

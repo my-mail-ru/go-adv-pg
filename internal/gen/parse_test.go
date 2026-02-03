@@ -594,11 +594,11 @@ func filterTableName(name, table any) bool {
 		return false
 	}
 
-	if _, ok := table.(string); ok {
+	if _, ok := table.(*advpggen.ModelName); ok {
 		name, table = table, name
 	}
 
-	_, ok := name.(string)
+	_, ok := name.(*advpggen.ModelName)
 	if !ok {
 		return false
 	}
@@ -612,11 +612,15 @@ func filterTableName(name, table any) bool {
 }
 
 func compareTableName(name, table any) bool {
-	if _, ok := table.(string); ok {
+	if modelName1, ok := table.(*advpggen.ModelName); ok {
+		if modelName2, ok := name.(*advpggen.ModelName); ok {
+			return *modelName1 == *modelName2
+		}
+
 		name, table = table, name
 	}
 
-	s, ok := name.(string)
+	modelName, ok := name.(*advpggen.ModelName)
 	if !ok {
 		return false
 	}
@@ -626,7 +630,7 @@ func compareTableName(name, table any) bool {
 		rt = rt.Elem()
 	}
 
-	return s == rt.Name()
+	return modelName.Name == rt.Name()
 }
 
 func getTestSources() fstest.MapFS {

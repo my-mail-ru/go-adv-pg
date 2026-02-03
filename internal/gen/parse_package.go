@@ -50,36 +50,36 @@ func (efs *excludeFS) Glob(pattern string) ([]string, error) {
 
 type AllTypes map[string]bool
 
-type DAOInfo struct {
+type Package struct {
 	AllTypes   AllTypes
 	PackageDAO string
 }
 
-func ParseDAO(fset FileSet, fsys fs.FS) (DAOInfo, error) {
+func ParsePackage(fset FileSet, fsys fs.FS) (Package, error) {
 	goFiles, err := fs.Glob(fsys, "*.go")
 	if err != nil {
-		return DAOInfo{}, fmt.Errorf(`adv-pg: Glob("*.go"): %w`, err)
+		return Package{}, fmt.Errorf(`adv-pg: Glob("*.go"): %w`, err)
 	}
 
-	ret := DAOInfo{
+	ret := Package{
 		AllTypes: make(AllTypes),
 	}
 
 	for _, goFile := range goFiles {
 		src, err := fs.ReadFile(fsys, goFile)
 		if err != nil {
-			return DAOInfo{}, fmt.Errorf("adv-pg: error reading %s: %w", goFile, err)
+			return Package{}, fmt.Errorf("adv-pg: error reading %s: %w", goFile, err)
 		}
 
-		if err = ret.parseDAOFile(fset, goFile, src); err != nil {
-			return DAOInfo{}, err
+		if err = ret.parseFile(fset, goFile, src); err != nil {
+			return Package{}, err
 		}
 	}
 
 	return ret, nil
 }
 
-func (di *DAOInfo) parseDAOFile(fset FileSet, goFile string, src []byte) error {
+func (p *Package) parseFile(fset FileSet, goFile string, src []byte) error {
 	f, err := parser.ParseFile(fset.FileSet, goFile, src, parser.SkipObjectResolution)
 	if err != nil {
 		return err
@@ -104,11 +104,11 @@ func (di *DAOInfo) parseDAOFile(fset FileSet, goFile string, src []byte) error {
 				}
 
 				_, isStruct := typeSpec.Type.(*ast.StructType)
-				di.AllTypes[typeSpec.Name.Name] = isStruct
+				p.AllTypes[typeSpec.Name.Name] = isStruct
 			}
 		case token.CONST:
 			for _, spec := range genDecl.Specs {
-				found, err := di.parseDAOConst(fset, spec)
+				found, err := p.parsePackageDAO(fset, spec)
 				if err != nil {
 					return err
 				}
@@ -123,7 +123,7 @@ func (di *DAOInfo) parseDAOFile(fset FileSet, goFile string, src []byte) error {
 	return nil
 }
 
-func (di *DAOInfo) parseDAOConst(fset FileSet, spec ast.Spec) (bool, error) {
+func (p *Package) parsePackageDAO(fset FileSet, spec ast.Spec) (bool, error) {
 	valSpec, ok := spec.(*ast.ValueSpec)
 
 	if !ok {
@@ -155,7 +155,7 @@ func (di *DAOInfo) parseDAOConst(fset FileSet, spec ast.Spec) (bool, error) {
 			return false, fmt.Errorf("adv-pg: %s: const "+ConstPackageDAO+" must be a quoted string", fset.Pos(valSpec))
 		}
 
-		di.PackageDAO = str
+		p.PackageDAO = str
 
 		return true, nil
 	}
@@ -163,17 +163,17 @@ func (di *DAOInfo) parseDAOConst(fset FileSet, spec ast.Spec) (bool, error) {
 	return false, nil
 }
 
-func (di DAOInfo) Get(dao, goName string) (daoName string, needGenerate, isPackageDAO bool, err error) {
+func (p Package) DAO(dao, goName string) (daoName string, needGenerate, isPackageDAO bool, err error) {
 	if dao == "" {
-		if di.PackageDAO != "" {
-			dao = di.PackageDAO
+		if p.PackageDAO != "" {
+			dao = p.PackageDAO
 			isPackageDAO = true
 		} else {
 			dao = goName + "DAO"
 		}
 	}
 
-	isStruct, hasDAO := di.AllTypes[dao]
+	isStruct, hasDAO := p.AllTypes[dao]
 	if !hasDAO {
 		return dao, true, isPackageDAO, nil
 	}

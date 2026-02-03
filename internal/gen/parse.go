@@ -14,6 +14,7 @@ import (
 	"io/fs"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/ettle/strcase"
@@ -45,7 +46,7 @@ func Parse(fsys fs.FS, fname string) (File, error) {
 
 	destFileName := generatedFileName(fname)
 
-	daoInfo, err := ParseDAO(fset, NewExcludeFS(fsys, destFileName))
+	pkgInfo, err := ParsePackage(fset, NewExcludeFS(fsys, destFileName))
 	if err != nil {
 		return File{}, err
 	}
@@ -62,7 +63,7 @@ func Parse(fsys fs.FS, fname string) (File, error) {
 		return File{}, err
 	}
 
-	vars := newIndexFieldVars(ret.AdvPgPkg)
+	vars := newTableVars(ret.AdvPgPkg)
 
 	// parse vars before parsing types
 	for _, decl := range f.Decls {
@@ -76,24 +77,9 @@ func Parse(fsys fs.FS, fname string) (File, error) {
 		}
 	}
 
-	tables := vars.Vars["Table"]
-	if len(tables) == 0 {
-		return File{}, errors.New("adv-pg: no Table is declared in file")
-	}
-
-	tablesByGoName := make(map[string]*advpg.Table, len(tables)) // key is TableModel.GoName
-	for _, tableI := range tables {
-		table, ok := tableI.(*advpg.Table)
-		if !ok {
-			return File{}, fmt.Errorf("adv-pg: internal error: got %T, but advpg.Table is expected", tableI)
-		}
-
-		goName, ok := table.Model.(string)
-		if !ok {
-			return File{}, fmt.Errorf("adv-pg: internal error: Model name is %T, but string is expected", table.Model)
-		}
-
-		tablesByGoName[goName] = table
+	ret.ModelsByName, err = vars.modelsByGoName()
+	if err != nil {
+		return File{}, err
 	}
 
 	// parse types
@@ -103,19 +89,27 @@ func Parse(fsys fs.FS, fname string) (File, error) {
 			continue
 		}
 
-		if err := ret.parseTypeSpecs(fset, tablesByGoName, genDecl); err != nil {
+		if err := ret.parseTypeSpecs(fset, genDecl); err != nil {
 			return File{}, err
 		}
 	}
 
-	if err := ret.fillModels(daoInfo); err != nil {
+	if err := ret.fillImplicitModels(); err != nil {
 		return File{}, err
 	}
+
+	if err := ret.fillModels(pkgInfo); err != nil {
+		return File{}, err
+	}
+
+	slices.SortFunc(ret.Models, func(a, b *TableModel) int {
+		return strings.Compare(a.GoName, b.GoName)
+	})
 
 	return ret, nil
 }
 
-func newIndexFieldVars(pkg string) StructVarParser {
+func newTableVars(pkg string) StructVarParser {
 	return NewStructVarParser([]VarSpec{{
 		TypePkg:  pkg,
 		TypeName: "Table",
@@ -123,6 +117,77 @@ func newIndexFieldVars(pkg string) StructVarParser {
 			return &advpg.Table{}
 		},
 	}})
+}
+
+func (v StructVarParser) modelsByGoName() (map[string]*TableModel, error) { // the key is TableModel.GoName
+	tables := v.Vars["Table"]
+	if len(tables) == 0 {
+		return nil, errors.New("adv-pg: no Table is declared in file")
+	}
+
+	ret := make(map[string]*TableModel, len(tables))
+	for _, tableI := range tables {
+		table, ok := tableI.(*advpg.Table)
+		if !ok {
+			return nil, fmt.Errorf("adv-pg: internal error: got %T, but advpg.Table is expected", tableI)
+		}
+
+		name, ok := table.Model.(*ModelName)
+		if !ok {
+			return nil, fmt.Errorf("adv-pg: internal error: Model name is %T, but ModelName is expected", table.Model)
+		}
+
+		ret[name.Name] = &TableModel{
+			Table:      table,
+			GoName:     name.Name,
+			IsImplicit: name.IsString,
+		}
+	}
+
+	return ret, nil
+}
+
+// fillImplicitModels does the same things as the parseTypeSpecs, but for implicitly declared tables
+func (f *File) fillImplicitModels() error {
+	for goName, model := range f.ModelsByName {
+		if !model.IsImplicit {
+			if model.Columns == nil { // not set by parseTypeSpecs because there's no explicit declaration
+				return fmt.Errorf("adv-pg: %s: tables without explicitly declared models must be specified by a string syntax (i.e. Model: %q), not as a struct literal (Model: %s{})", goName, goName, goName)
+			}
+
+			continue
+		}
+
+		model.Columns = make([]*Column, len(model.Fields))
+		model.ColumnsByGoName = make(map[string]*Column, len(model.Fields))
+		model.ColumnsByName = make(map[string]*Column, len(model.Fields))
+
+		for i, field := range model.Fields {
+			if field.GoType == "" {
+				return fmt.Errorf("adv-pg: %s.%s: GoType is mandatory for implicitly declared models", goName, field.Field)
+			}
+
+			colName := field.Column
+			if colName == "" {
+				colName = strcase.ToSnake(field.Field)
+			}
+
+			col := &Column{
+				Field:      &model.Fields[i],
+				GoName:     field.Field,
+				ColumnName: colName,
+				GoType:     field.GoType,
+			}
+
+			model.Columns[i] = col
+			model.ColumnsByGoName[col.GoName] = col
+			model.ColumnsByName[colName] = col
+		}
+
+		f.Models = append(f.Models, model)
+	}
+
+	return nil
 }
 
 func (f *File) processImports(fset FileSet, imports []*ast.ImportSpec) error {
@@ -176,7 +241,7 @@ func appendAdvPgImport(imports []ImportSpec, name *string, ourPkg, defaultPkgNam
 	})
 }
 
-func (f *File) fillModels(daoInfo DAOInfo) (err error) {
+func (f *File) fillModels(pkgInfo Package) (err error) {
 	for _, model := range f.Models {
 		if model.Table.Table == "" {
 			model.Table.Table = strcase.ToSnake(model.GoName)
@@ -186,11 +251,11 @@ func (f *File) fillModels(daoInfo DAOInfo) (err error) {
 			return fmt.Errorf("adv-pg: %s: UpdateOnConflict and OnConflictDoNothing are mutually exclusive", model.GoName)
 		}
 
-		if err = model.setFields(model.Fields); err != nil {
+		if err = model.setFields(); err != nil {
 			return err
 		}
 
-		model.DAO, model.NeedGeneratedDAO, model.HasPackageDAO, err = daoInfo.Get(model.DAO, model.GoName)
+		model.DAO, model.NeedGeneratedDAO, model.HasPackageDAO, err = pkgInfo.DAO(model.DAO, model.GoName)
 		if err != nil {
 			return err
 		}
@@ -220,14 +285,22 @@ func (f *File) fillModels(daoInfo DAOInfo) (err error) {
 	return nil
 }
 
-func (tm *TableModel) setFields(fields []advpg.Field) error {
-	for i, field := range fields {
+func (tm *TableModel) setFields() error {
+	if tm.IsImplicit {
+		return nil // already done in fillImplicitModels
+	}
+
+	for i, field := range tm.Fields {
+		if field.GoType != "" {
+			return fmt.Errorf("adv-pg: %s.%s: specifying GoType for explicitly declared table model is forbidden", tm.GoName, field.Field)
+		}
+
 		col, err := tm.colByName(field.Field)
 		if err != nil {
 			return err
 		}
 
-		col.Field = &fields[i]
+		col.Field = &tm.Fields[i]
 	}
 
 	return nil

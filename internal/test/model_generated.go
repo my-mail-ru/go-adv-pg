@@ -15,6 +15,543 @@ import (
 	advpgconn "github.com/my-mail-ru/go-adv-pg/conn"
 )
 
+//// ExtLink ////
+
+const (
+	sqlSelectExtLink          = `SELECT user_id, ext_id, EXTRACT(EPOCH FROM created_at::TIMESTAMP WITH TIME ZONE)::BIGINT AS created_at, status, link_count FROM ext_links`
+	sqlInsertHeadExtLink      = `INSERT INTO ext_links (user_id, ext_id, created_at, status) VALUES `
+	sqlInsertTailExtLink      = ` ON CONFLICT (user_id, ext_id) DO UPDATE SET status=EXCLUDED.status, link_count=ext_links.link_count+$5 RETURNING link_count`
+	sqlInsertExtLink          = sqlInsertHeadExtLink + `($1, $2, TIMESTAMP WITH TIME ZONE 'epoch' + INTERVAL '1 sec' * $3, $4)` + sqlInsertTailExtLink
+	sqlFullUpdateExtLink      = `UPDATE ext_links SET status=$1, link_count=link_count+$2`
+	sqlUpdateReturningExtLink = ` RETURNING link_count`
+	sqlSelectMutatorsExtLink  = `SELECT link_count FROM ext_links WHERE user_id=$1 AND ext_id=$2`
+)
+
+type ExtLinkRecord struct {
+	updateMask   uint64
+	data         ExtLink
+	mutLinkCount int
+}
+
+func (data ExtLink) Record() *ExtLinkRecord {
+	return &ExtLinkRecord{data: data}
+}
+
+func (model *ExtLinkRecord) UserID() int {
+	return model.data.UserID
+}
+
+func (model *ExtLinkRecord) ExternalID() int {
+	return model.data.ExternalID
+}
+
+func (model *ExtLinkRecord) CreatedAt() MyTime {
+	return model.data.CreatedAt
+}
+
+func (model *ExtLinkRecord) Status() int {
+	return model.data.Status
+}
+
+func (model *ExtLinkRecord) LinkCount() int {
+	return model.data.LinkCount
+}
+
+func (model *ExtLinkRecord) SetUserID(x int) {
+	model.data.UserID = x
+}
+
+func (model *ExtLinkRecord) SetExternalID(x int) {
+	model.data.ExternalID = x
+}
+
+func (model *ExtLinkRecord) SetCreatedAt(x MyTime) {
+	model.data.CreatedAt = x
+}
+
+func (model *ExtLinkRecord) SetStatus(x int) {
+	model.data.Status = x
+	model.updateMask |= 1
+}
+
+func (model *ExtLinkRecord) IncLinkCount() {
+	model.mutLinkCount++
+}
+
+func (model *ExtLinkRecord) DecLinkCount() {
+	model.mutLinkCount--
+}
+
+func (model *ExtLinkRecord) AddLinkCount(x int) {
+	model.mutLinkCount += x
+}
+
+func (*ExtLinkRecord) Table() string {
+	return "ext_links"
+}
+
+type ExtLinkDAO struct {
+	db advpg.DB
+}
+
+func NewExtLinkDAO(db advpg.DB) ExtLinkDAO {
+	return ExtLinkDAO{db: db}
+}
+
+func (model *ExtLinkRecord) querySelectByPrimaryKey(inUserID int, inExternalID int) *advpg.SimpleQuery {
+	return advpg.NewSimpleQuery(
+		sqlSelectExtLink+` WHERE user_id=$1 AND ext_id=$2`,
+		[]any{inUserID, inExternalID},
+		[]any{&model.data.UserID, &model.data.ExternalID, &model.data.CreatedAt, &model.data.Status, &model.data.LinkCount},
+	)
+}
+
+func (model *ExtLinkRecord) queryDeleteByPrimaryKey(inUserID int, inExternalID int) *advpg.SimpleQuery {
+	return advpg.NewSimpleQuery(
+		`DELETE FROM ext_links WHERE user_id=$1 AND ext_id=$2`,
+		[]any{inUserID, inExternalID},
+		nil,
+	)
+}
+
+func (dao ExtLinkDAO) SelectByPrimaryKey(ctx context.Context, inUserID int, inExternalID int, optFuncs ...advpg.SelectOptionFunc) (ExtLinkRecord, error) {
+	var data ExtLinkRecord
+	q := data.querySelectByPrimaryKey(inUserID, inExternalID)
+	ctx = advpgconn.QueryInfoCtx(ctx, "ext_links", "PrimaryKey")
+	opt := advpg.NewSelectOptions(optFuncs...)
+	db := advpgconn.ReplicaByOpt(dao.db, opt, "ext_links")
+	row := db.QueryRow(ctx, q.SQL(), q.Args()...)
+	err := row.Scan(q.Results()...)
+
+	return data, err
+}
+
+func (dao ExtLinkDAO) DeleteByPrimaryKey(ctx context.Context, inUserID int, inExternalID int) error {
+	ctx = advpgconn.QueryInfoCtx(ctx, "ext_links", "PrimaryKey")
+	q := (*ExtLinkRecord)(nil).queryDeleteByPrimaryKey(inUserID, inExternalID)
+	ct, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
+	if err != nil {
+		return err
+	}
+
+	if ct.RowsAffected() == 0 {
+		return sql.ErrNoRows
+	}
+
+	return nil
+}
+
+func (model *ExtLinkRecord) querySelectMultiByStatus(inStatuses []int) *advpg.SimpleQuery {
+	return advpg.NewSimpleQuery(
+		sqlSelectExtLink+` WHERE status=IN($1)`,
+		[]any{inStatuses},
+		[]any{&model.data.UserID, &model.data.ExternalID, &model.data.CreatedAt, &model.data.Status, &model.data.LinkCount},
+	)
+}
+
+func (model *ExtLinkRecord) queryDeleteMultiByStatus(inStatuses []int) *advpg.SimpleQuery {
+	return advpg.NewSimpleQuery(
+		`DELETE FROM ext_links WHERE status=IN($1)`,
+		[]any{inStatuses},
+		nil,
+	)
+}
+
+func (dao ExtLinkDAO) SelectMultiByStatus(ctx context.Context, inStatuses []int, optFuncs ...advpg.SelectOptionFunc) ([]ExtLinkRecord, error) {
+	var data ExtLinkRecord
+	q := data.querySelectMultiByStatus(inStatuses)
+	ctx = advpgconn.QueryInfoCtx(ctx, "ext_links", "Status")
+	opt := advpg.NewSelectOptions(optFuncs...)
+	db := advpgconn.ReplicaByOpt(dao.db, opt, "ext_links")
+
+	rows, err := db.Query(ctx, q.SQL(), q.Args()...)
+	if err != nil {
+		return nil, err
+	}
+
+	defer rows.Close()
+
+	ret := ([]ExtLinkRecord)(nil)
+
+	for rows.Next() {
+		if err = rows.Scan(q.Results()...); err != nil {
+			return nil, err
+		}
+
+		ret = append(ret, data)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return ret, nil
+}
+
+func (dao ExtLinkDAO) DeleteMultiByStatus(ctx context.Context, inStatuses []int) error {
+	ctx = advpgconn.QueryInfoCtx(ctx, "ext_links", "Status")
+	q := (*ExtLinkRecord)(nil).queryDeleteMultiByStatus(inStatuses)
+	_, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
+	return err
+}
+
+func (model *ExtLinkRecord) queryInsert() *advpg.SimpleQuery {
+	return advpg.NewSimpleQuery(
+		sqlInsertExtLink,
+		[]any{model.data.UserID, model.data.ExternalID, model.data.CreatedAt, model.data.Status, model.mutLinkCount},
+		[]any{&model.data.LinkCount},
+	)
+}
+
+func (dao ExtLinkDAO) Insert(ctx context.Context, data *ExtLinkRecord) error {
+	ctx = advpgconn.QueryInfoCtx(ctx, "ext_links", "")
+	q := data.queryInsert()
+	err := dao.db.QueryRow(ctx, q.SQL(), q.Args()...).Scan(q.Results()...)
+
+	if err == nil {
+		data.reset()
+	}
+
+	return err
+}
+
+func (model *ExtLinkRecord) queryFullUpdate() *advpg.SimpleQuery {
+	return advpg.NewSimpleQuery(
+		sqlFullUpdateExtLink+" WHERE user_id=$3 AND ext_id=$4"+sqlUpdateReturningExtLink,
+		[]any{model.data.Status, model.mutLinkCount, model.data.UserID, model.data.ExternalID},
+		[]any{&model.data.LinkCount},
+	)
+}
+
+func (dao ExtLinkDAO) FullUpdate(ctx context.Context, data *ExtLinkRecord) error {
+	ctx = advpgconn.QueryInfoCtx(ctx, "ext_links", "")
+	q := data.queryFullUpdate()
+	return dao.db.QueryRow(ctx, q.SQL(), q.Args()...).Scan(q.Results()...)
+}
+
+func (model *ExtLinkRecord) queryUpdate() *advpg.QueryBuilder {
+	if model.updateMask == 0 && model.mutLinkCount == 0 {
+		return &advpg.QueryBuilder{}
+	}
+
+	q := advpg.NewQueryBuilder(`UPDATE ext_links SET`)
+	if model.updateMask&1 != 0 {
+		if len(q.Args()) != 0 {
+			q.AppendSQL(",")
+		}
+
+		q.AppendSQL(" status=$")
+		q.AppendPlaceholderNum()
+		q.AppendArgs(model.data.Status)
+	}
+	if model.mutLinkCount != 0 {
+		if len(q.Args()) != 0 {
+			q.AppendSQL(",")
+		}
+
+		q.AppendSQL(" link_count=link_count+$")
+		q.AppendPlaceholderNum()
+		q.AppendArgs(model.mutLinkCount)
+	}
+	q.AppendSQL(` WHERE user_id=$`)
+	q.AppendPlaceholderNum()
+	q.AppendArgs(model.data.UserID)
+	q.AppendSQL(` AND ext_id=$`)
+	q.AppendPlaceholderNum()
+	q.AppendArgs(model.data.ExternalID)
+
+	q.AppendSQL(sqlUpdateReturningExtLink)
+	q.SetResults([]any{&model.data.LinkCount})
+
+	return q
+}
+
+func (model *ExtLinkRecord) querySelectMutators() *advpg.SimpleQuery {
+	return advpg.NewSimpleQuery(
+		sqlSelectMutatorsExtLink,
+		[]any{model.data.UserID, model.data.ExternalID},
+		[]any{&model.data.LinkCount},
+	)
+}
+
+func (model *ExtLinkRecord) reset() {
+	model.updateMask = 0
+	model.mutLinkCount = 0
+}
+
+func (dao ExtLinkDAO) Update(ctx context.Context, data *ExtLinkRecord) error {
+	q := advpg.Query(data.queryUpdate())
+	index := ""
+	query := q.SQL()
+	if query == "" {
+		q = data.querySelectMutators()
+		query = q.SQL()
+		index = "PrimaryKey"
+	}
+	ctx = advpgconn.QueryInfoCtx(ctx, "ext_links", index)
+
+	err := dao.db.QueryRow(ctx, query, q.Args()...).Scan(q.Results()...)
+	if err == nil {
+		data.reset()
+	}
+
+	return err
+}
+
+//// Seen ////
+
+const (
+	sqlSelectSeen     = `SELECT user_id, seen_at FROM seen`
+	sqlInsertHeadSeen = `INSERT INTO seen (user_id) VALUES `
+	sqlInsertTailSeen = ` ON CONFLICT (user_id) DO NOTHING RETURNING seen_at`
+	sqlInsertSeen     = sqlInsertHeadSeen + `($1)` + sqlInsertTailSeen
+	sqlFullUpdateSeen = `UPDATE seen SET seen_at=$1`
+)
+
+type Seen struct {
+	UserID int       `db:"user_id"`
+	SeenAt time.Time `db:"seen_at"`
+}
+
+type SeenRecord struct {
+	updateMask uint64
+	data       Seen
+}
+
+func (data Seen) Record() *SeenRecord {
+	return &SeenRecord{data: data}
+}
+
+func (model *SeenRecord) UserID() int {
+	return model.data.UserID
+}
+
+func (model *SeenRecord) SeenAt() time.Time {
+	return model.data.SeenAt
+}
+
+func (model *SeenRecord) SetUserID(x int) {
+	model.data.UserID = x
+}
+
+func (model *SeenRecord) SetSeenAt(x time.Time) {
+	model.data.SeenAt = x
+	model.updateMask |= 1
+}
+
+func (*SeenRecord) Table() string {
+	return "seen"
+}
+
+type SeenDAO struct {
+	db advpg.DB
+}
+
+func NewSeenDAO(db advpg.DB) SeenDAO {
+	return SeenDAO{db: db}
+}
+
+func (model *SeenRecord) querySelectByUserID(inUserID int) *advpg.SimpleQuery {
+	return advpg.NewSimpleQuery(
+		sqlSelectSeen+` WHERE user_id=$1`,
+		[]any{inUserID},
+		[]any{&model.data.UserID, &model.data.SeenAt},
+	)
+}
+
+func (model *SeenRecord) queryDeleteByUserID(inUserID int) *advpg.SimpleQuery {
+	return advpg.NewSimpleQuery(
+		`DELETE FROM seen WHERE user_id=$1`,
+		[]any{inUserID},
+		nil,
+	)
+}
+
+func (dao SeenDAO) SelectByUserID(ctx context.Context, inUserID int, optFuncs ...advpg.SelectOptionFunc) (SeenRecord, error) {
+	var data SeenRecord
+	q := data.querySelectByUserID(inUserID)
+	ctx = advpgconn.QueryInfoCtx(ctx, "seen", "UserID")
+	opt := advpg.NewSelectOptions(optFuncs...)
+	db := advpgconn.ReplicaByOpt(dao.db, opt, "seen")
+	row := db.QueryRow(ctx, q.SQL(), q.Args()...)
+	err := row.Scan(q.Results()...)
+
+	return data, err
+}
+
+func (dao SeenDAO) DeleteByUserID(ctx context.Context, inUserID int) error {
+	ctx = advpgconn.QueryInfoCtx(ctx, "seen", "UserID")
+	q := (*SeenRecord)(nil).queryDeleteByUserID(inUserID)
+	ct, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
+	if err != nil {
+		return err
+	}
+
+	if ct.RowsAffected() == 0 {
+		return sql.ErrNoRows
+	}
+
+	return nil
+}
+
+func (model *SeenRecord) queryInsert() *advpg.SimpleQuery {
+	return advpg.NewSimpleQuery(
+		sqlInsertSeen,
+		[]any{model.data.UserID},
+		[]any{&model.data.SeenAt},
+	)
+}
+
+func (dao SeenDAO) Insert(ctx context.Context, data *SeenRecord) error {
+	ctx = advpgconn.QueryInfoCtx(ctx, "seen", "")
+	q := data.queryInsert()
+	err := dao.db.QueryRow(ctx, q.SQL(), q.Args()...).Scan(q.Results()...)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+
+	if err == nil {
+		data.reset()
+	}
+
+	return err
+}
+
+func queryInsertMultiSeen(models []SeenRecord) *advpg.QueryBuilder {
+	if len(models) == 0 {
+		return &advpg.QueryBuilder{}
+	}
+
+	q := advpg.NewQueryBuilderCap(sqlInsertHeadSeen, 1*len(models), 1*len(models))
+
+	for i, model := range models {
+		if i == 0 {
+			q.AppendSQL("(")
+		} else {
+			q.AppendSQL(",(")
+		}
+
+		q.AppendPlaceholder()
+		q.AppendArgs(model.data.UserID)
+		q.AppendSQL(")")
+
+		q.AppendResults(&models[i].data.SeenAt)
+	}
+
+	q.AppendSQL(sqlInsertTailSeen)
+
+	return q
+}
+
+func (dao SeenDAO) InsertMulti(ctx context.Context, records []SeenRecord) error {
+	ctx = advpgconn.QueryInfoCtx(ctx, "seen", "")
+	q := queryInsertMultiSeen(records)
+	rows, err := dao.db.Query(ctx, q.SQL(), q.Args()...)
+	defer rows.Close()
+
+	if err == nil {
+		results := q.Results()
+		from := 0
+		to := 1
+
+		for rows.Next() {
+			if err = rows.Scan(results[from:to]...); err != nil {
+				break
+			}
+
+			from = to
+			to += 1
+		}
+
+		if err == nil {
+			err = rows.Err()
+		}
+
+		if to < len(results) {
+			err = fmt.Errorf("SeenDAO.InsertMulti: got %d records, but %d was expected", to, len(results))
+		}
+	}
+	if errors.Is(err, sql.ErrNoRows) {
+		err = nil
+	}
+
+	if err == nil {
+		for i := range records {
+			records[i].reset()
+		}
+	}
+
+	return err
+}
+
+func (model *SeenRecord) queryFullUpdate() *advpg.SimpleQuery {
+	return advpg.NewSimpleQuery(
+		sqlFullUpdateSeen+" WHERE user_id=$2",
+		[]any{model.data.SeenAt, model.data.UserID},
+		[]any{},
+	)
+}
+
+func (dao SeenDAO) FullUpdate(ctx context.Context, data *SeenRecord) error {
+	ctx = advpgconn.QueryInfoCtx(ctx, "seen", "")
+	q := data.queryFullUpdate()
+	ct, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
+	if err != nil {
+		return err
+	}
+
+	if ct.RowsAffected() == 0 {
+		return sql.ErrNoRows
+	}
+
+	return nil
+}
+
+func (model *SeenRecord) queryUpdate() *advpg.QueryBuilder {
+	if model.updateMask == 0 {
+		return &advpg.QueryBuilder{}
+	}
+
+	q := advpg.NewQueryBuilder(`UPDATE seen SET`)
+	if model.updateMask&1 != 0 {
+		if len(q.Args()) != 0 {
+			q.AppendSQL(",")
+		}
+
+		q.AppendSQL(" seen_at=$")
+		q.AppendPlaceholderNum()
+		q.AppendArgs(model.data.SeenAt)
+	}
+	q.AppendSQL(` WHERE user_id=$`)
+	q.AppendPlaceholderNum()
+	q.AppendArgs(model.data.UserID)
+
+	return q
+}
+
+func (model *SeenRecord) reset() {
+	model.updateMask = 0
+}
+
+func (dao SeenDAO) Update(ctx context.Context, data *SeenRecord) error {
+	q := data.queryUpdate()
+	query := q.SQL()
+	if query == "" {
+		return nil
+	}
+	ctx = advpgconn.QueryInfoCtx(ctx, "seen", "")
+
+	ct, err := dao.db.Exec(ctx, query, q.Args()...)
+	if err == nil && ct.RowsAffected() == 0 {
+		err = sql.ErrNoRows
+	}
+	if err == nil {
+		data.reset()
+	}
+
+	return err
+}
+
 //// User ////
 
 const (
@@ -469,713 +1006,6 @@ func (dao UserDAO) Update(ctx context.Context, data *UserRecord) error {
 	return err
 }
 
-//// ExtLink ////
-
-const (
-	sqlSelectExtLink          = `SELECT user_id, ext_id, EXTRACT(EPOCH FROM created_at::TIMESTAMP WITH TIME ZONE)::BIGINT AS created_at, status, link_count FROM ext_links`
-	sqlInsertHeadExtLink      = `INSERT INTO ext_links (user_id, ext_id, created_at, status) VALUES `
-	sqlInsertTailExtLink      = ` ON CONFLICT (user_id, ext_id) DO UPDATE SET status=EXCLUDED.status, link_count=ext_links.link_count+$5 RETURNING link_count`
-	sqlInsertExtLink          = sqlInsertHeadExtLink + `($1, $2, TIMESTAMP WITH TIME ZONE 'epoch' + INTERVAL '1 sec' * $3, $4)` + sqlInsertTailExtLink
-	sqlFullUpdateExtLink      = `UPDATE ext_links SET status=$1, link_count=link_count+$2`
-	sqlUpdateReturningExtLink = ` RETURNING link_count`
-	sqlSelectMutatorsExtLink  = `SELECT link_count FROM ext_links WHERE user_id=$1 AND ext_id=$2`
-)
-
-type ExtLinkRecord struct {
-	updateMask   uint64
-	data         ExtLink
-	mutLinkCount int
-}
-
-func (data ExtLink) Record() *ExtLinkRecord {
-	return &ExtLinkRecord{data: data}
-}
-
-func (model *ExtLinkRecord) UserID() int {
-	return model.data.UserID
-}
-
-func (model *ExtLinkRecord) ExternalID() int {
-	return model.data.ExternalID
-}
-
-func (model *ExtLinkRecord) CreatedAt() MyTime {
-	return model.data.CreatedAt
-}
-
-func (model *ExtLinkRecord) Status() int {
-	return model.data.Status
-}
-
-func (model *ExtLinkRecord) LinkCount() int {
-	return model.data.LinkCount
-}
-
-func (model *ExtLinkRecord) SetUserID(x int) {
-	model.data.UserID = x
-}
-
-func (model *ExtLinkRecord) SetExternalID(x int) {
-	model.data.ExternalID = x
-}
-
-func (model *ExtLinkRecord) SetCreatedAt(x MyTime) {
-	model.data.CreatedAt = x
-}
-
-func (model *ExtLinkRecord) SetStatus(x int) {
-	model.data.Status = x
-	model.updateMask |= 1
-}
-
-func (model *ExtLinkRecord) IncLinkCount() {
-	model.mutLinkCount++
-}
-
-func (model *ExtLinkRecord) DecLinkCount() {
-	model.mutLinkCount--
-}
-
-func (model *ExtLinkRecord) AddLinkCount(x int) {
-	model.mutLinkCount += x
-}
-
-func (*ExtLinkRecord) Table() string {
-	return "ext_links"
-}
-
-type ExtLinkDAO struct {
-	db advpg.DB
-}
-
-func NewExtLinkDAO(db advpg.DB) ExtLinkDAO {
-	return ExtLinkDAO{db: db}
-}
-
-func (model *ExtLinkRecord) querySelectByPrimaryKey(inUserID int, inExternalID int) *advpg.SimpleQuery {
-	return advpg.NewSimpleQuery(
-		sqlSelectExtLink+` WHERE user_id=$1 AND ext_id=$2`,
-		[]any{inUserID, inExternalID},
-		[]any{&model.data.UserID, &model.data.ExternalID, &model.data.CreatedAt, &model.data.Status, &model.data.LinkCount},
-	)
-}
-
-func (model *ExtLinkRecord) queryDeleteByPrimaryKey(inUserID int, inExternalID int) *advpg.SimpleQuery {
-	return advpg.NewSimpleQuery(
-		`DELETE FROM ext_links WHERE user_id=$1 AND ext_id=$2`,
-		[]any{inUserID, inExternalID},
-		nil,
-	)
-}
-
-func (dao ExtLinkDAO) SelectByPrimaryKey(ctx context.Context, inUserID int, inExternalID int, optFuncs ...advpg.SelectOptionFunc) (ExtLinkRecord, error) {
-	var data ExtLinkRecord
-	q := data.querySelectByPrimaryKey(inUserID, inExternalID)
-	ctx = advpgconn.QueryInfoCtx(ctx, "ext_links", "PrimaryKey")
-	opt := advpg.NewSelectOptions(optFuncs...)
-	db := advpgconn.ReplicaByOpt(dao.db, opt, "ext_links")
-	row := db.QueryRow(ctx, q.SQL(), q.Args()...)
-	err := row.Scan(q.Results()...)
-
-	return data, err
-}
-
-func (dao ExtLinkDAO) DeleteByPrimaryKey(ctx context.Context, inUserID int, inExternalID int) error {
-	ctx = advpgconn.QueryInfoCtx(ctx, "ext_links", "PrimaryKey")
-	q := (*ExtLinkRecord)(nil).queryDeleteByPrimaryKey(inUserID, inExternalID)
-	ct, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
-	if err != nil {
-		return err
-	}
-
-	if ct.RowsAffected() == 0 {
-		return sql.ErrNoRows
-	}
-
-	return nil
-}
-
-func (model *ExtLinkRecord) querySelectMultiByStatus(inStatuses []int) *advpg.SimpleQuery {
-	return advpg.NewSimpleQuery(
-		sqlSelectExtLink+` WHERE status=IN($1)`,
-		[]any{inStatuses},
-		[]any{&model.data.UserID, &model.data.ExternalID, &model.data.CreatedAt, &model.data.Status, &model.data.LinkCount},
-	)
-}
-
-func (model *ExtLinkRecord) queryDeleteMultiByStatus(inStatuses []int) *advpg.SimpleQuery {
-	return advpg.NewSimpleQuery(
-		`DELETE FROM ext_links WHERE status=IN($1)`,
-		[]any{inStatuses},
-		nil,
-	)
-}
-
-func (dao ExtLinkDAO) SelectMultiByStatus(ctx context.Context, inStatuses []int, optFuncs ...advpg.SelectOptionFunc) ([]ExtLinkRecord, error) {
-	var data ExtLinkRecord
-	q := data.querySelectMultiByStatus(inStatuses)
-	ctx = advpgconn.QueryInfoCtx(ctx, "ext_links", "Status")
-	opt := advpg.NewSelectOptions(optFuncs...)
-	db := advpgconn.ReplicaByOpt(dao.db, opt, "ext_links")
-
-	rows, err := db.Query(ctx, q.SQL(), q.Args()...)
-	if err != nil {
-		return nil, err
-	}
-
-	defer rows.Close()
-
-	ret := ([]ExtLinkRecord)(nil)
-
-	for rows.Next() {
-		if err = rows.Scan(q.Results()...); err != nil {
-			return nil, err
-		}
-
-		ret = append(ret, data)
-	}
-
-	if err = rows.Err(); err != nil {
-		return nil, err
-	}
-
-	return ret, nil
-}
-
-func (dao ExtLinkDAO) DeleteMultiByStatus(ctx context.Context, inStatuses []int) error {
-	ctx = advpgconn.QueryInfoCtx(ctx, "ext_links", "Status")
-	q := (*ExtLinkRecord)(nil).queryDeleteMultiByStatus(inStatuses)
-	_, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
-	return err
-}
-
-func (model *ExtLinkRecord) queryInsert() *advpg.SimpleQuery {
-	return advpg.NewSimpleQuery(
-		sqlInsertExtLink,
-		[]any{model.data.UserID, model.data.ExternalID, model.data.CreatedAt, model.data.Status, model.mutLinkCount},
-		[]any{&model.data.LinkCount},
-	)
-}
-
-func (dao ExtLinkDAO) Insert(ctx context.Context, data *ExtLinkRecord) error {
-	ctx = advpgconn.QueryInfoCtx(ctx, "ext_links", "")
-	q := data.queryInsert()
-	err := dao.db.QueryRow(ctx, q.SQL(), q.Args()...).Scan(q.Results()...)
-
-	if err == nil {
-		data.reset()
-	}
-
-	return err
-}
-
-func (model *ExtLinkRecord) queryFullUpdate() *advpg.SimpleQuery {
-	return advpg.NewSimpleQuery(
-		sqlFullUpdateExtLink+" WHERE user_id=$3 AND ext_id=$4"+sqlUpdateReturningExtLink,
-		[]any{model.data.Status, model.mutLinkCount, model.data.UserID, model.data.ExternalID},
-		[]any{&model.data.LinkCount},
-	)
-}
-
-func (dao ExtLinkDAO) FullUpdate(ctx context.Context, data *ExtLinkRecord) error {
-	ctx = advpgconn.QueryInfoCtx(ctx, "ext_links", "")
-	q := data.queryFullUpdate()
-	return dao.db.QueryRow(ctx, q.SQL(), q.Args()...).Scan(q.Results()...)
-}
-
-func (model *ExtLinkRecord) queryUpdate() *advpg.QueryBuilder {
-	if model.updateMask == 0 && model.mutLinkCount == 0 {
-		return &advpg.QueryBuilder{}
-	}
-
-	q := advpg.NewQueryBuilder(`UPDATE ext_links SET`)
-	if model.updateMask&1 != 0 {
-		if len(q.Args()) != 0 {
-			q.AppendSQL(",")
-		}
-
-		q.AppendSQL(" status=$")
-		q.AppendPlaceholderNum()
-		q.AppendArgs(model.data.Status)
-	}
-	if model.mutLinkCount != 0 {
-		if len(q.Args()) != 0 {
-			q.AppendSQL(",")
-		}
-
-		q.AppendSQL(" link_count=link_count+$")
-		q.AppendPlaceholderNum()
-		q.AppendArgs(model.mutLinkCount)
-	}
-	q.AppendSQL(` WHERE user_id=$`)
-	q.AppendPlaceholderNum()
-	q.AppendArgs(model.data.UserID)
-	q.AppendSQL(` AND ext_id=$`)
-	q.AppendPlaceholderNum()
-	q.AppendArgs(model.data.ExternalID)
-
-	q.AppendSQL(sqlUpdateReturningExtLink)
-	q.SetResults([]any{&model.data.LinkCount})
-
-	return q
-}
-
-func (model *ExtLinkRecord) querySelectMutators() *advpg.SimpleQuery {
-	return advpg.NewSimpleQuery(
-		sqlSelectMutatorsExtLink,
-		[]any{model.data.UserID, model.data.ExternalID},
-		[]any{&model.data.LinkCount},
-	)
-}
-
-func (model *ExtLinkRecord) reset() {
-	model.updateMask = 0
-	model.mutLinkCount = 0
-}
-
-func (dao ExtLinkDAO) Update(ctx context.Context, data *ExtLinkRecord) error {
-	q := advpg.Query(data.queryUpdate())
-	index := ""
-	query := q.SQL()
-	if query == "" {
-		q = data.querySelectMutators()
-		query = q.SQL()
-		index = "PrimaryKey"
-	}
-	ctx = advpgconn.QueryInfoCtx(ctx, "ext_links", index)
-
-	err := dao.db.QueryRow(ctx, query, q.Args()...).Scan(q.Results()...)
-	if err == nil {
-		data.reset()
-	}
-
-	return err
-}
-
-//// UserViews ////
-
-const (
-	sqlSelectUserViews          = `SELECT user_id, views FROM user_views`
-	sqlInsertHeadUserViews      = `INSERT INTO user_views (user_id, views) VALUES `
-	sqlInsertTailUserViews      = ` ON CONFLICT (user_id) DO UPDATE SET views=user_views.views+$3 RETURNING views`
-	sqlInsertUserViews          = sqlInsertHeadUserViews + `($1, $2)` + sqlInsertTailUserViews
-	sqlUpdateReturningUserViews = ` RETURNING views`
-	sqlSelectMutatorsUserViews  = `SELECT views FROM user_views WHERE user_id=$1`
-)
-
-type UserViewsRecord struct {
-	data     UserViews
-	mutViews int
-}
-
-func (data UserViews) Record() *UserViewsRecord {
-	return &UserViewsRecord{data: data}
-}
-
-func (model *UserViewsRecord) UserID() int {
-	return model.data.UserID
-}
-
-func (model *UserViewsRecord) Views() int {
-	return model.data.Views
-}
-
-func (model *UserViewsRecord) SetUserID(x int) {
-	model.data.UserID = x
-}
-
-func (model *UserViewsRecord) IncViews() {
-	model.mutViews++
-}
-
-func (model *UserViewsRecord) DecViews() {
-	model.mutViews--
-}
-
-func (model *UserViewsRecord) AddViews(x int) {
-	model.mutViews += x
-}
-
-func (*UserViewsRecord) Table() string {
-	return "user_views"
-}
-
-type UserViewsDAO struct {
-	db advpg.DB
-}
-
-func NewUserViewsDAO(db advpg.DB) UserViewsDAO {
-	return UserViewsDAO{db: db}
-}
-
-func (model *UserViewsRecord) querySelectByUserID(inUserID int) *advpg.SimpleQuery {
-	return advpg.NewSimpleQuery(
-		sqlSelectUserViews+` WHERE user_id=$1`,
-		[]any{inUserID},
-		[]any{&model.data.UserID, &model.data.Views},
-	)
-}
-
-func (model *UserViewsRecord) queryDeleteByUserID(inUserID int) *advpg.SimpleQuery {
-	return advpg.NewSimpleQuery(
-		`DELETE FROM user_views WHERE user_id=$1`,
-		[]any{inUserID},
-		nil,
-	)
-}
-
-func (dao UserViewsDAO) SelectByUserID(ctx context.Context, inUserID int, optFuncs ...advpg.SelectOptionFunc) (UserViewsRecord, error) {
-	var data UserViewsRecord
-	q := data.querySelectByUserID(inUserID)
-	ctx = advpgconn.QueryInfoCtx(ctx, "user_views", "UserID")
-	opt := advpg.NewSelectOptions(optFuncs...)
-	db := advpgconn.ReplicaByOpt(dao.db, opt, "user_views")
-	row := db.QueryRow(ctx, q.SQL(), q.Args()...)
-	err := row.Scan(q.Results()...)
-
-	return data, err
-}
-
-func (dao UserViewsDAO) DeleteByUserID(ctx context.Context, inUserID int) error {
-	ctx = advpgconn.QueryInfoCtx(ctx, "user_views", "UserID")
-	q := (*UserViewsRecord)(nil).queryDeleteByUserID(inUserID)
-	ct, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
-	if err != nil {
-		return err
-	}
-
-	if ct.RowsAffected() == 0 {
-		return sql.ErrNoRows
-	}
-
-	return nil
-}
-
-func (model *UserViewsRecord) queryInsert() *advpg.SimpleQuery {
-	return advpg.NewSimpleQuery(
-		sqlInsertUserViews,
-		[]any{model.data.UserID, model.data.Views + model.mutViews, model.mutViews},
-		[]any{&model.data.Views},
-	)
-}
-
-func (dao UserViewsDAO) Insert(ctx context.Context, data *UserViewsRecord) error {
-	ctx = advpgconn.QueryInfoCtx(ctx, "user_views", "")
-	q := data.queryInsert()
-	err := dao.db.QueryRow(ctx, q.SQL(), q.Args()...).Scan(q.Results()...)
-
-	if err == nil {
-		data.reset()
-	}
-
-	return err
-}
-
-func (model *UserViewsRecord) queryUpdate() *advpg.QueryBuilder {
-	if model.mutViews == 0 {
-		return &advpg.QueryBuilder{}
-	}
-
-	q := advpg.NewQueryBuilder(`UPDATE user_views SET`)
-	if model.mutViews != 0 {
-		if len(q.Args()) != 0 {
-			q.AppendSQL(",")
-		}
-
-		q.AppendSQL(" views=views+$")
-		q.AppendPlaceholderNum()
-		q.AppendArgs(model.mutViews)
-	}
-	q.AppendSQL(` WHERE user_id=$`)
-	q.AppendPlaceholderNum()
-	q.AppendArgs(model.data.UserID)
-
-	q.AppendSQL(sqlUpdateReturningUserViews)
-	q.SetResults([]any{&model.data.Views})
-
-	return q
-}
-
-func (model *UserViewsRecord) querySelectMutators() *advpg.SimpleQuery {
-	return advpg.NewSimpleQuery(
-		sqlSelectMutatorsUserViews,
-		[]any{model.data.UserID},
-		[]any{&model.data.Views},
-	)
-}
-
-func (model *UserViewsRecord) reset() {
-	model.mutViews = 0
-}
-
-func (dao UserViewsDAO) Update(ctx context.Context, data *UserViewsRecord) error {
-	q := advpg.Query(data.queryUpdate())
-	index := ""
-	query := q.SQL()
-	if query == "" {
-		q = data.querySelectMutators()
-		query = q.SQL()
-		index = "UserID"
-	}
-	ctx = advpgconn.QueryInfoCtx(ctx, "user_views", index)
-
-	err := dao.db.QueryRow(ctx, query, q.Args()...).Scan(q.Results()...)
-	if err == nil {
-		data.reset()
-	}
-
-	return err
-}
-
-//// Seen ////
-
-const (
-	sqlSelectSeen     = `SELECT user_id, seen_at FROM seen`
-	sqlInsertHeadSeen = `INSERT INTO seen (user_id) VALUES `
-	sqlInsertTailSeen = ` ON CONFLICT (user_id) DO NOTHING RETURNING seen_at`
-	sqlInsertSeen     = sqlInsertHeadSeen + `($1)` + sqlInsertTailSeen
-	sqlFullUpdateSeen = `UPDATE seen SET seen_at=$1`
-)
-
-type SeenRecord struct {
-	updateMask uint64
-	data       Seen
-}
-
-func (data Seen) Record() *SeenRecord {
-	return &SeenRecord{data: data}
-}
-
-func (model *SeenRecord) UserID() int {
-	return model.data.UserID
-}
-
-func (model *SeenRecord) SeenAt() time.Time {
-	return model.data.SeenAt
-}
-
-func (model *SeenRecord) SetUserID(x int) {
-	model.data.UserID = x
-}
-
-func (model *SeenRecord) SetSeenAt(x time.Time) {
-	model.data.SeenAt = x
-	model.updateMask |= 1
-}
-
-func (*SeenRecord) Table() string {
-	return "seen"
-}
-
-type SeenDAO struct {
-	db advpg.DB
-}
-
-func NewSeenDAO(db advpg.DB) SeenDAO {
-	return SeenDAO{db: db}
-}
-
-func (model *SeenRecord) querySelectByUserID(inUserID int) *advpg.SimpleQuery {
-	return advpg.NewSimpleQuery(
-		sqlSelectSeen+` WHERE user_id=$1`,
-		[]any{inUserID},
-		[]any{&model.data.UserID, &model.data.SeenAt},
-	)
-}
-
-func (model *SeenRecord) queryDeleteByUserID(inUserID int) *advpg.SimpleQuery {
-	return advpg.NewSimpleQuery(
-		`DELETE FROM seen WHERE user_id=$1`,
-		[]any{inUserID},
-		nil,
-	)
-}
-
-func (dao SeenDAO) SelectByUserID(ctx context.Context, inUserID int, optFuncs ...advpg.SelectOptionFunc) (SeenRecord, error) {
-	var data SeenRecord
-	q := data.querySelectByUserID(inUserID)
-	ctx = advpgconn.QueryInfoCtx(ctx, "seen", "UserID")
-	opt := advpg.NewSelectOptions(optFuncs...)
-	db := advpgconn.ReplicaByOpt(dao.db, opt, "seen")
-	row := db.QueryRow(ctx, q.SQL(), q.Args()...)
-	err := row.Scan(q.Results()...)
-
-	return data, err
-}
-
-func (dao SeenDAO) DeleteByUserID(ctx context.Context, inUserID int) error {
-	ctx = advpgconn.QueryInfoCtx(ctx, "seen", "UserID")
-	q := (*SeenRecord)(nil).queryDeleteByUserID(inUserID)
-	ct, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
-	if err != nil {
-		return err
-	}
-
-	if ct.RowsAffected() == 0 {
-		return sql.ErrNoRows
-	}
-
-	return nil
-}
-
-func (model *SeenRecord) queryInsert() *advpg.SimpleQuery {
-	return advpg.NewSimpleQuery(
-		sqlInsertSeen,
-		[]any{model.data.UserID},
-		[]any{&model.data.SeenAt},
-	)
-}
-
-func (dao SeenDAO) Insert(ctx context.Context, data *SeenRecord) error {
-	ctx = advpgconn.QueryInfoCtx(ctx, "seen", "")
-	q := data.queryInsert()
-	err := dao.db.QueryRow(ctx, q.SQL(), q.Args()...).Scan(q.Results()...)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil
-	}
-
-	if err == nil {
-		data.reset()
-	}
-
-	return err
-}
-
-func queryInsertMultiSeen(models []SeenRecord) *advpg.QueryBuilder {
-	if len(models) == 0 {
-		return &advpg.QueryBuilder{}
-	}
-
-	q := advpg.NewQueryBuilderCap(sqlInsertHeadSeen, 1*len(models), 1*len(models))
-
-	for i, model := range models {
-		if i == 0 {
-			q.AppendSQL("(")
-		} else {
-			q.AppendSQL(",(")
-		}
-
-		q.AppendPlaceholder()
-		q.AppendArgs(model.data.UserID)
-		q.AppendSQL(")")
-
-		q.AppendResults(&models[i].data.SeenAt)
-	}
-
-	q.AppendSQL(sqlInsertTailSeen)
-
-	return q
-}
-
-func (dao SeenDAO) InsertMulti(ctx context.Context, records []SeenRecord) error {
-	ctx = advpgconn.QueryInfoCtx(ctx, "seen", "")
-	q := queryInsertMultiSeen(records)
-	rows, err := dao.db.Query(ctx, q.SQL(), q.Args()...)
-	defer rows.Close()
-
-	if err == nil {
-		results := q.Results()
-		from := 0
-		to := 1
-
-		for rows.Next() {
-			if err = rows.Scan(results[from:to]...); err != nil {
-				break
-			}
-
-			from = to
-			to += 1
-		}
-
-		if err == nil {
-			err = rows.Err()
-		}
-
-		if to < len(results) {
-			err = fmt.Errorf("SeenDAO.InsertMulti: got %d records, but %d was expected", to, len(results))
-		}
-	}
-	if errors.Is(err, sql.ErrNoRows) {
-		err = nil
-	}
-
-	if err == nil {
-		for i := range records {
-			records[i].reset()
-		}
-	}
-
-	return err
-}
-
-func (model *SeenRecord) queryFullUpdate() *advpg.SimpleQuery {
-	return advpg.NewSimpleQuery(
-		sqlFullUpdateSeen+" WHERE user_id=$2",
-		[]any{model.data.SeenAt, model.data.UserID},
-		[]any{},
-	)
-}
-
-func (dao SeenDAO) FullUpdate(ctx context.Context, data *SeenRecord) error {
-	ctx = advpgconn.QueryInfoCtx(ctx, "seen", "")
-	q := data.queryFullUpdate()
-	ct, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
-	if err != nil {
-		return err
-	}
-
-	if ct.RowsAffected() == 0 {
-		return sql.ErrNoRows
-	}
-
-	return nil
-}
-
-func (model *SeenRecord) queryUpdate() *advpg.QueryBuilder {
-	if model.updateMask == 0 {
-		return &advpg.QueryBuilder{}
-	}
-
-	q := advpg.NewQueryBuilder(`UPDATE seen SET`)
-	if model.updateMask&1 != 0 {
-		if len(q.Args()) != 0 {
-			q.AppendSQL(",")
-		}
-
-		q.AppendSQL(" seen_at=$")
-		q.AppendPlaceholderNum()
-		q.AppendArgs(model.data.SeenAt)
-	}
-	q.AppendSQL(` WHERE user_id=$`)
-	q.AppendPlaceholderNum()
-	q.AppendArgs(model.data.UserID)
-
-	return q
-}
-
-func (model *SeenRecord) reset() {
-	model.updateMask = 0
-}
-
-func (dao SeenDAO) Update(ctx context.Context, data *SeenRecord) error {
-	q := data.queryUpdate()
-	query := q.SQL()
-	if query == "" {
-		return nil
-	}
-	ctx = advpgconn.QueryInfoCtx(ctx, "seen", "")
-
-	ct, err := dao.db.Exec(ctx, query, q.Args()...)
-	if err == nil && ct.RowsAffected() == 0 {
-		err = sql.ErrNoRows
-	}
-	if err == nil {
-		data.reset()
-	}
-
-	return err
-}
-
 //// UserOptions ////
 
 const (
@@ -1503,6 +1333,181 @@ func (dao UserOptionsDAO) Update(ctx context.Context, data *UserOptionsRecord) e
 	if err == nil && ct.RowsAffected() == 0 {
 		err = sql.ErrNoRows
 	}
+	if err == nil {
+		data.reset()
+	}
+
+	return err
+}
+
+//// UserViews ////
+
+const (
+	sqlSelectUserViews          = `SELECT user_id, views FROM user_views`
+	sqlInsertHeadUserViews      = `INSERT INTO user_views (user_id, views) VALUES `
+	sqlInsertTailUserViews      = ` ON CONFLICT (user_id) DO UPDATE SET views=user_views.views+$3 RETURNING views`
+	sqlInsertUserViews          = sqlInsertHeadUserViews + `($1, $2)` + sqlInsertTailUserViews
+	sqlUpdateReturningUserViews = ` RETURNING views`
+	sqlSelectMutatorsUserViews  = `SELECT views FROM user_views WHERE user_id=$1`
+)
+
+type UserViewsRecord struct {
+	data     UserViews
+	mutViews int
+}
+
+func (data UserViews) Record() *UserViewsRecord {
+	return &UserViewsRecord{data: data}
+}
+
+func (model *UserViewsRecord) UserID() int {
+	return model.data.UserID
+}
+
+func (model *UserViewsRecord) Views() int {
+	return model.data.Views
+}
+
+func (model *UserViewsRecord) SetUserID(x int) {
+	model.data.UserID = x
+}
+
+func (model *UserViewsRecord) IncViews() {
+	model.mutViews++
+}
+
+func (model *UserViewsRecord) DecViews() {
+	model.mutViews--
+}
+
+func (model *UserViewsRecord) AddViews(x int) {
+	model.mutViews += x
+}
+
+func (*UserViewsRecord) Table() string {
+	return "user_views"
+}
+
+type UserViewsDAO struct {
+	db advpg.DB
+}
+
+func NewUserViewsDAO(db advpg.DB) UserViewsDAO {
+	return UserViewsDAO{db: db}
+}
+
+func (model *UserViewsRecord) querySelectByUserID(inUserID int) *advpg.SimpleQuery {
+	return advpg.NewSimpleQuery(
+		sqlSelectUserViews+` WHERE user_id=$1`,
+		[]any{inUserID},
+		[]any{&model.data.UserID, &model.data.Views},
+	)
+}
+
+func (model *UserViewsRecord) queryDeleteByUserID(inUserID int) *advpg.SimpleQuery {
+	return advpg.NewSimpleQuery(
+		`DELETE FROM user_views WHERE user_id=$1`,
+		[]any{inUserID},
+		nil,
+	)
+}
+
+func (dao UserViewsDAO) SelectByUserID(ctx context.Context, inUserID int, optFuncs ...advpg.SelectOptionFunc) (UserViewsRecord, error) {
+	var data UserViewsRecord
+	q := data.querySelectByUserID(inUserID)
+	ctx = advpgconn.QueryInfoCtx(ctx, "user_views", "UserID")
+	opt := advpg.NewSelectOptions(optFuncs...)
+	db := advpgconn.ReplicaByOpt(dao.db, opt, "user_views")
+	row := db.QueryRow(ctx, q.SQL(), q.Args()...)
+	err := row.Scan(q.Results()...)
+
+	return data, err
+}
+
+func (dao UserViewsDAO) DeleteByUserID(ctx context.Context, inUserID int) error {
+	ctx = advpgconn.QueryInfoCtx(ctx, "user_views", "UserID")
+	q := (*UserViewsRecord)(nil).queryDeleteByUserID(inUserID)
+	ct, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
+	if err != nil {
+		return err
+	}
+
+	if ct.RowsAffected() == 0 {
+		return sql.ErrNoRows
+	}
+
+	return nil
+}
+
+func (model *UserViewsRecord) queryInsert() *advpg.SimpleQuery {
+	return advpg.NewSimpleQuery(
+		sqlInsertUserViews,
+		[]any{model.data.UserID, model.data.Views + model.mutViews, model.mutViews},
+		[]any{&model.data.Views},
+	)
+}
+
+func (dao UserViewsDAO) Insert(ctx context.Context, data *UserViewsRecord) error {
+	ctx = advpgconn.QueryInfoCtx(ctx, "user_views", "")
+	q := data.queryInsert()
+	err := dao.db.QueryRow(ctx, q.SQL(), q.Args()...).Scan(q.Results()...)
+
+	if err == nil {
+		data.reset()
+	}
+
+	return err
+}
+
+func (model *UserViewsRecord) queryUpdate() *advpg.QueryBuilder {
+	if model.mutViews == 0 {
+		return &advpg.QueryBuilder{}
+	}
+
+	q := advpg.NewQueryBuilder(`UPDATE user_views SET`)
+	if model.mutViews != 0 {
+		if len(q.Args()) != 0 {
+			q.AppendSQL(",")
+		}
+
+		q.AppendSQL(" views=views+$")
+		q.AppendPlaceholderNum()
+		q.AppendArgs(model.mutViews)
+	}
+	q.AppendSQL(` WHERE user_id=$`)
+	q.AppendPlaceholderNum()
+	q.AppendArgs(model.data.UserID)
+
+	q.AppendSQL(sqlUpdateReturningUserViews)
+	q.SetResults([]any{&model.data.Views})
+
+	return q
+}
+
+func (model *UserViewsRecord) querySelectMutators() *advpg.SimpleQuery {
+	return advpg.NewSimpleQuery(
+		sqlSelectMutatorsUserViews,
+		[]any{model.data.UserID},
+		[]any{&model.data.Views},
+	)
+}
+
+func (model *UserViewsRecord) reset() {
+	model.mutViews = 0
+}
+
+func (dao UserViewsDAO) Update(ctx context.Context, data *UserViewsRecord) error {
+	q := advpg.Query(data.queryUpdate())
+	index := ""
+	query := q.SQL()
+	if query == "" {
+		q = data.querySelectMutators()
+		query = q.SQL()
+		index = "UserID"
+	}
+	ctx = advpgconn.QueryInfoCtx(ctx, "user_views", index)
+
+	err := dao.db.QueryRow(ctx, query, q.Args()...).Scan(q.Results()...)
 	if err == nil {
 		data.reset()
 	}

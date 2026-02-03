@@ -8,11 +8,10 @@ import (
 	"strconv"
 
 	"github.com/ettle/strcase"
-
-	advpg "github.com/my-mail-ru/go-adv-pg"
 )
 
-func (f *File) parseTypeSpecs(fset FileSet, tablesByGoName map[string]*advpg.Table, genDecl *ast.GenDecl) error {
+// parseTypeSpecs parses type declarations for types mentioned in ModelsByName.
+func (f *File) parseTypeSpecs(fset FileSet, genDecl *ast.GenDecl) error {
 	for _, spec := range genDecl.Specs {
 		typeSpec, ok := spec.(*ast.TypeSpec)
 		if !ok || typeSpec.Name == nil {
@@ -21,7 +20,7 @@ func (f *File) parseTypeSpecs(fset FileSet, tablesByGoName map[string]*advpg.Tab
 
 		goName := typeSpec.Name.Name
 
-		table, ok := tablesByGoName[goName]
+		model, ok := f.ModelsByName[goName]
 		if !ok {
 			continue
 		}
@@ -39,18 +38,18 @@ func (f *File) parseTypeSpecs(fset FileSet, tablesByGoName map[string]*advpg.Tab
 			return fmt.Errorf("adv-pg: %s: %s: the struct has no fields", fset.Pos(genDecl), goName)
 		}
 
+		if model.IsImplicit {
+			return fmt.Errorf("adv-pg: %s: %s: explicitly declared table models must be specified by a struct literal syntax (i.e. Model: %s{}), not as a string (Model: %q)", fset.Pos(genDecl), goName, goName, goName)
+		}
+
 		cols, err := parseColumns(fset, goName, structType.Fields.List)
 		if err != nil {
 			return err
 		}
 
-		model := &TableModel{
-			Table:           table,
-			GoName:          goName,
-			Columns:         cols,
-			ColumnsByGoName: make(map[string]*Column, len(cols)),
-			ColumnsByName:   make(map[string]*Column, len(cols)),
-		}
+		model.Columns = cols
+		model.ColumnsByGoName = make(map[string]*Column, len(cols))
+		model.ColumnsByName = make(map[string]*Column, len(cols))
 
 		for _, col := range cols {
 			model.ColumnsByGoName[col.GoName] = col
@@ -58,7 +57,6 @@ func (f *File) parseTypeSpecs(fset FileSet, tablesByGoName map[string]*advpg.Tab
 		}
 
 		f.Models = append(f.Models, model)
-		f.ModelsByName[model.GoName] = model
 	}
 
 	return nil
