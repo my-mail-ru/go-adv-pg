@@ -152,7 +152,7 @@ func (f *File) fillImplicitModels() error {
 	for goName, model := range f.ModelsByName {
 		if !model.IsImplicit {
 			if model.Columns == nil { // not set by parseTypeSpecs because there's no explicit declaration
-				return fmt.Errorf("adv-pg: %s: tables without explicitly declared models must be specified by a string syntax (i.e. Model: %q), not as a struct literal (Model: %s{})", goName, goName, goName)
+				return fmt.Errorf("adv-pg: %s: internal error: tables without explicitly declared models must be specified by a string syntax (i.e. Model: %q), not as a struct literal (Model: %s{})", goName, goName, goName) // should not happen because IsImplicit = IsString
 			}
 
 			continue

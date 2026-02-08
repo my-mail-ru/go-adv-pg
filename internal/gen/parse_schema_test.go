@@ -283,6 +283,15 @@ var _ = advpg.Table{
 	DAO:   "NotAStruct",
 }
 
+//adv:pg:test: implicit model without GoType
+
+var _ = advpg.Table{
+	Model: "Implicit",
+	Fields: []advpg.Field{{
+		Field: "ID",
+	}},
+}
+
 //adv:pg:test: no ActiveRecord
 
 type NoActiveRecord struct {
@@ -474,5 +483,25 @@ var ActiveRecordEnabledTable = &advpg.Table{
 	}, {
 		Field:          "Counter",
 		EnableMutators: true,
+	}},
+}
+
+//adv:pg:test: implicit model
+
+var ImplicitModel = advpg.Table{
+	Model: "Implicit",
+	Table: "implicit",
+	Fields: []advpg.Field{{
+		Field:         "ID",
+		Column:        "id",
+		GoType:        "int",
+		InitByStorage: true,
+	}, {
+		Field:  "Name", // implicit column name
+		GoType: "string",
+	}},
+	Indices: []advpg.Index{{
+		Keys:         []string{"ID"},
+		IsPrimaryKey: true,
 	}},
 }
