@@ -272,6 +272,9 @@ func TestParse(t *testing.T) {
 		name:    "UpdateOnConflict with InitByStorage PrimaryKey",
 		wantErr: "UpdateOnConflict may not be used with tables with InitByStorage primary keys",
 	}, {
+		name:    "useless SQLValue",
+		wantErr: "SQLValue is useless",
+	}, {
 		name:    "column name conflict",
 		wantErr: `ColunmNameConflict.Duplicate: column name "disallowed" may be specified multiple times only when SQLValue is used`,
 	}, {
@@ -307,6 +310,9 @@ func TestParse(t *testing.T) {
 	}, {
 		name:    "implicit model without GoType",
 		wantErr: "GoType is mandatory for implicitly declared models",
+	}, {
+		name:    "GoType with explicitly declared table",
+		wantErr: "specifying GoType for explicitly declared table model is forbidden",
 	}, {
 		name: "no ActiveRecord",
 		want: testFile([]*advpggen.TableModel{{

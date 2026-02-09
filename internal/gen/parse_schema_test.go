@@ -103,6 +103,19 @@ var _ = advpg.Table{
 	}},
 }
 
+//adv:pg:test: useless SQLValue
+
+var _ = advpg.Table{
+	Model: "UselessSQLValue",
+	Fields: []advpg.Field{{
+		Field:           "Test",
+		GoType:          "int",
+		InitByStorage:   true,
+		UpdateByStorage: true,
+		SQLValue:        "useless",
+	}},
+}
+
 //adv:pg:test: column name conflict
 
 type ColunmNameConflict struct {
@@ -289,6 +302,20 @@ var _ = advpg.Table{
 	Model: "Implicit",
 	Fields: []advpg.Field{{
 		Field: "ID",
+	}},
+}
+
+//adv:pg:test: GoType with explicitly declared table
+
+type GoTypeWithExplicitTable struct {
+	ID int `db:"id"`
+}
+
+var _ = advpg.Table{
+	Model: GoTypeWithExplicitTable{},
+	Fields: []advpg.Field{{
+		Field:  "ID",
+		GoType: "int",
 	}},
 }
 

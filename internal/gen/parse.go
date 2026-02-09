@@ -429,8 +429,8 @@ func (tm *TableModel) fillColumns() error {
 			}
 
 			columnConflict[col.ColumnName] = struct{}{}
-		} else if col.InitByStorage && col.DisableUpdate {
-			return fmt.Errorf("adv-pg: %s.%s: SQLValue is useless when InitByStorage and DisableUpdate are both on", tm.GoName, col.GoName)
+		} else if col.InitByStorage && (col.DisableUpdate || col.UpdateByStorage) {
+			return fmt.Errorf("adv-pg: %s.%s: SQLValue is useless when InitByStorage is used with DisableUpdate or UpdateByStorage", tm.GoName, col.GoName)
 		}
 
 		needSetter := false
