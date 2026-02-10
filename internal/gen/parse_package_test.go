@@ -79,11 +79,11 @@ func TestExcludeFS(t *testing.T) {
 	}
 }
 
-func TestParseDAO(t *testing.T) {
+func TestParsePackage(t *testing.T) {
 	tests := []struct {
 		name    string
 		files   map[string]string
-		want    advpggen.DAOInfo
+		want    advpggen.Package
 		wantErr string
 	}{{
 		name: "broken file",
@@ -116,7 +116,7 @@ func TestParseDAO(t *testing.T) {
 			"struct.go":    "package test\ntype Test struct {}\ntype Alias = int\nconst zero = 0",
 			"nonstruct.go": "package test\ntype Int int\nfunc foo(){}",
 		},
-		want: advpggen.DAOInfo{
+		want: advpggen.Package{
 			AllTypes: advpggen.AllTypes{"Test": true, "Int": false},
 		},
 	}, {
@@ -125,7 +125,7 @@ func TestParseDAO(t *testing.T) {
 			"struct.go":    "package test\ntype Test struct {}\ntype Alias = int\nconst PackageDAO = `Test`",
 			"nonstruct.go": "package test\ntype Int int",
 		},
-		want: advpggen.DAOInfo{
+		want: advpggen.Package{
 			AllTypes:   advpggen.AllTypes{"Test": true, "Int": false},
 			PackageDAO: "Test",
 		},
@@ -134,7 +134,7 @@ func TestParseDAO(t *testing.T) {
 		files: map[string]string{
 			"multi_const.go": "package test\nconst (\nFooBar = 123\nTest, PackageDAO, _ = `test`, `Test`, `baz`\n)",
 		},
-		want: advpggen.DAOInfo{
+		want: advpggen.Package{
 			AllTypes:   advpggen.AllTypes{},
 			PackageDAO: "Test",
 		},
@@ -148,7 +148,7 @@ func TestParseDAO(t *testing.T) {
 				fsys[fname] = &fstest.MapFile{Data: []byte(data)}
 			}
 
-			got, err := advpggen.ParseDAO(advpggen.NewFileSet(), fsys)
+			got, err := advpggen.ParsePackage(advpggen.NewFileSet(), fsys)
 			if err != nil {
 				if tt.wantErr == "" {
 					t.Fatal("unexpected error: ", err)

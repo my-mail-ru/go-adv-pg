@@ -23,8 +23,6 @@ type ImportSpec struct {
 type TableModel struct {
 	*advpg.Table
 	GoName              string
-	NeedGeneratedDAO    bool // DAO isn't defined in other files (handwritten or generated) of the package
-	HasPackageDAO       bool // default index name is based on GoName
 	Columns             []*Column
 	ColumnsByGoName     map[string]*Column
 	ColumnsByName       map[string]*Column
@@ -36,6 +34,9 @@ type TableModel struct {
 	UpdateResultColumns []*Column
 	SetterColumns       []*Column // mutators aren't specified here
 	MutatorColumns      []*Column //
+	NeedGeneratedDAO    bool      // DAO isn't defined in other files (handwritten or generated) of the package
+	HasPackageDAO       bool      // default index name is based on GoName
+	IsImplicit          bool      // model isn't declared explicitly as a struct and has to be generated
 }
 
 type Column struct {

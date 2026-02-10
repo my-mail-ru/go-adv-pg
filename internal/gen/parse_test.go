@@ -22,7 +22,7 @@ var testSource string
 
 func testFile(models []*advpggen.TableModel, noPkgName ...bool) advpggen.File {
 	pkgName := "advpg"
-	if len(noPkgName) != 0 {
+	if len(noPkgName) != 0 && noPkgName[0] {
 		pkgName = ""
 	}
 
@@ -59,8 +59,17 @@ func TestParse(t *testing.T) {
 	colIDNoPK := copyCol(colID)
 	colIDNoPK.IsPrimaryKey = false
 
-	colARID := copyCol(colID)
-	colARID.GoExpr = "model.data.ID"
+	colARID := func(f *advpg.Field) *advpggen.Column {
+		ret := copyCol(colID)
+		ret.GoExpr = "model.data.ID"
+		if f == nil {
+			ret.Field = &advpg.Field{}
+		} else {
+			ret.Field = f
+		}
+
+		return ret
+	}
 
 	colType := &advpggen.Column{
 		GoName:     "Type",
@@ -147,6 +156,14 @@ func TestParse(t *testing.T) {
 		Field:      &ActiveRecordEnabledTable.Fields[3],
 	}
 
+	colName := &advpggen.Column{
+		GoName:     "Name",
+		GoExpr:     "model.data.Name",
+		GoType:     "string",
+		ColumnName: "name",
+		Field:      &ImplicitModel.Fields[1],
+	}
+
 	// we can modify Index/Field values used as expected results in runtime,
 	// because test values are read from the file and aren't taken from the
 	// compiled binary.
@@ -184,6 +201,10 @@ func TestParse(t *testing.T) {
 	UpdateOnConflictWithoutValueColumnsTable.Indices[0].Deleter = "DeleteUpdateOnConflictWithoutValueColumnsByID"
 	UpdateOnConflictWithoutValueColumnsTable.Indices[0].IsUniq = true
 
+	NoMethodsTable.DAO = "CustomDAO"
+	NoMethodsTable.Indices[0].Name = PrimaryKeyOnlyTable.Indices[0].Name
+	NoMethodsTable.Indices[0].IsUniq = true
+
 	ActiveRecordWithoutValueColumnsTable.Table = "active_record_without_value_columns"
 	ActiveRecordWithoutValueColumnsTable.DAO = "DAOInThisFile"
 	ActiveRecordWithoutValueColumnsTable.Indices[0].Name = NoPrimaryKeyTable.Indices[0].Name
@@ -203,9 +224,12 @@ func TestParse(t *testing.T) {
 	ActiveRecordEnabledTable.Indices[2].Selector = "SelectMultiByIDType"
 	ActiveRecordEnabledTable.Indices[2].Deleter = "DeleteMultiByIDType"
 
-	NoMethodsTable.DAO = "CustomDAO"
-	NoMethodsTable.Indices[0].Name = PrimaryKeyOnlyTable.Indices[0].Name
-	NoMethodsTable.Indices[0].IsUniq = true
+	ImplicitModel.Model = &advpggen.ModelName{Name: "Implicit", IsString: true}
+	ImplicitModel.DAO = NoActiveRecordTable.DAO
+	ImplicitModel.Indices[0].Name = NoPrimaryKeyTable.Indices[0].Name
+	ImplicitModel.Indices[0].Selector = "SelectImplicitByID"
+	ImplicitModel.Indices[0].Deleter = "DeleteImplicitByID"
+	ImplicitModel.Indices[0].IsUniq = true
 
 	tests := []struct {
 		name         string
@@ -248,6 +272,9 @@ func TestParse(t *testing.T) {
 		name:    "UpdateOnConflict with InitByStorage PrimaryKey",
 		wantErr: "UpdateOnConflict may not be used with tables with InitByStorage primary keys",
 	}, {
+		name:    "useless SQLValue",
+		wantErr: "SQLValue is useless",
+	}, {
 		name:    "column name conflict",
 		wantErr: `ColunmNameConflict.Duplicate: column name "disallowed" may be specified multiple times only when SQLValue is used`,
 	}, {
@@ -280,6 +307,12 @@ func TestParse(t *testing.T) {
 	}, {
 		name:    "DAO is not a struct.go",
 		wantErr: "NotAStruct type isn't a struct",
+	}, {
+		name:    "implicit model without GoType",
+		wantErr: "GoType is mandatory for implicitly declared models",
+	}, {
+		name:    "GoType with explicitly declared table",
+		wantErr: "specifying GoType for explicitly declared table model is forbidden",
 	}, {
 		name: "no ActiveRecord",
 		want: testFile([]*advpggen.TableModel{{
@@ -436,17 +469,17 @@ func TestParse(t *testing.T) {
 			Table:  ActiveRecordWithoutValueColumnsTable,
 			GoName: "ActiveRecordWithoutValueColumns",
 			Columns: []*advpggen.Column{
-				colARID,
+				colARID(nil),
 			},
 			PrimaryKeyIndex: &ActiveRecordWithoutValueColumnsTable.Indices[0],
 			PrimaryKeyColumns: []*advpggen.Column{
-				colARID,
+				colARID(nil),
 			},
 			InsertValueColumns: []*advpggen.Column{
-				colARID,
+				colARID(nil),
 			},
 			SetterColumns: []*advpggen.Column{
-				colARID,
+				colARID(nil),
 			},
 		}}),
 	}, {
@@ -458,7 +491,7 @@ func TestParse(t *testing.T) {
 			Table:  ActiveRecordEnabledTable,
 			GoName: "ActiveRecordEnabled",
 			Columns: []*advpggen.Column{
-				colARID,
+				colARID(nil),
 				colARType,
 				colCreatedAt(&ActiveRecordEnabledTable.Fields[0], true),
 				colUpdatedAt(&ActiveRecordEnabledTable.Fields[1], true),
@@ -467,10 +500,10 @@ func TestParse(t *testing.T) {
 			},
 			PrimaryKeyIndex: &ActiveRecordEnabledTable.Indices[0],
 			PrimaryKeyColumns: []*advpggen.Column{
-				colARID,
+				colARID(nil),
 			},
 			InsertValueColumns: []*advpggen.Column{
-				colARID,
+				colARID(nil),
 				colARType,
 				colDescr(&ActiveRecordEnabledTable.Fields[2], true),
 				colCounter,
@@ -489,7 +522,7 @@ func TestParse(t *testing.T) {
 				colCounter,
 			},
 			SetterColumns: []*advpggen.Column{
-				colARID,
+				colARID(nil),
 				colARType,
 				colDescr(&ActiveRecordEnabledTable.Fields[2], true),
 			},
@@ -514,6 +547,37 @@ func TestParse(t *testing.T) {
 			"SetCreatedAt",
 			"SetUpdatedAt",
 		},
+	}, {
+		name: "implicit model",
+		want: testFile([]*advpggen.TableModel{{
+			Table:            &ImplicitModel,
+			GoName:           "Implicit",
+			NeedGeneratedDAO: true,
+			HasPackageDAO:    true,
+			IsImplicit:       true,
+			Columns: []*advpggen.Column{
+				colARID(&ImplicitModel.Fields[0]),
+				colName,
+			},
+			PrimaryKeyIndex: &ImplicitModel.Indices[0],
+			PrimaryKeyColumns: []*advpggen.Column{
+				colARID(&ImplicitModel.Fields[0]),
+			},
+			InsertValueColumns: []*advpggen.Column{
+				colName,
+			},
+			InsertResultColumns: []*advpggen.Column{
+				colARID(&ImplicitModel.Fields[0]),
+			},
+			UpdateValueColumns: []*advpggen.Column{
+				colName,
+			},
+			SetterColumns: []*advpggen.Column{
+				colName,
+			},
+		}}),
+		must:    []string{"type Implicit struct", `db:"name"`},
+		mustNot: []string{`db:"Name"`},
 	}}
 
 	testSources := getTestSources()
@@ -594,11 +658,11 @@ func filterTableName(name, table any) bool {
 		return false
 	}
 
-	if _, ok := table.(string); ok {
+	if _, ok := table.(*advpggen.ModelName); ok {
 		name, table = table, name
 	}
 
-	_, ok := name.(string)
+	_, ok := name.(*advpggen.ModelName)
 	if !ok {
 		return false
 	}
@@ -612,11 +676,15 @@ func filterTableName(name, table any) bool {
 }
 
 func compareTableName(name, table any) bool {
-	if _, ok := table.(string); ok {
+	if modelName1, ok := table.(*advpggen.ModelName); ok {
+		if modelName2, ok := name.(*advpggen.ModelName); ok {
+			return *modelName1 == *modelName2
+		}
+
 		name, table = table, name
 	}
 
-	s, ok := name.(string)
+	modelName, ok := name.(*advpggen.ModelName)
 	if !ok {
 		return false
 	}
@@ -626,7 +694,7 @@ func compareTableName(name, table any) bool {
 		rt = rt.Elem()
 	}
 
-	return s == rt.Name()
+	return modelName.Name == rt.Name()
 }
 
 func getTestSources() fstest.MapFS {
