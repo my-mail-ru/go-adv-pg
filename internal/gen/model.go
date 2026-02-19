@@ -58,6 +58,11 @@ type OrderColumn struct {
 	Order advpg.OrderDirection
 }
 
+type UpdateMultiCol struct {
+	*Column
+	Kind string // "value", "mutator", "null"
+}
+
 type InsertArgColumn struct {
 	*Column
 	IsUpsertMutator bool

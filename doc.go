@@ -235,6 +235,7 @@ The update operation is represented by two methods:
     declaration). This method updates all settable (see below) fields of a table.
     The mutator fields are always updated too, regardless of whether the mutator counter
     is non-zero.
+
   - Update (aka "smart" Update). Like FullUpdate, it requires a primary key to be declared.
     Requires [ActiveRecord] (i.e. DisableActiveRecord set to false for a [Table]).
     The Record type's Setter methods and mutator (Inc/Dec/Add) methods track data changes.
@@ -247,6 +248,12 @@ The update operation is represented by two methods:
     the SELECT operation is issued instead of the UPDATE to retrieve the current mutator values
     from a database. Thus, all mutator fields are guaranteed to hold actual values when
     the Update method returns.
+
+  - UpdateMulti. Batch update issuing a single `UPDATE...FROM (VALUES ...)` query.
+    Equivalent to calling FullUpdate for each record, but in one query.
+    Always updates all updatable columns (not "smart"/change-tracked).
+    Mutator columns are included as increments (same semantics as FullUpdate).
+    Like InsertMulti, result ordering relies on PostgreSQL returning rows in VALUES order.
 
 The following [Field] properties control the [Update] method behavior:
 

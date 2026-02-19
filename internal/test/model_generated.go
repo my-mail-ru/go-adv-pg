@@ -24,6 +24,8 @@ const (
 	sqlInsertExtLink          = sqlInsertHeadExtLink + `($1, $2, TIMESTAMP WITH TIME ZONE 'epoch' + INTERVAL '1 sec' * $3, $4)` + sqlInsertTailExtLink
 	sqlFullUpdateExtLink      = `UPDATE ext_links SET status=$1, link_count=link_count+$2`
 	sqlUpdateReturningExtLink = ` RETURNING link_count`
+	sqlUpdateMultiHeadExtLink = `UPDATE ext_links SET status=(t::ext_links).status, link_count=ext_links.link_count+(t::ext_links).link_count FROM (VALUES `
+	sqlUpdateMultiTailExtLink = `) t WHERE ext_links.user_id=(t::ext_links).user_id AND ext_links.ext_id=(t::ext_links).ext_id RETURNING ext_links.link_count`
 	sqlSelectMutatorsExtLink  = `SELECT link_count FROM ext_links WHERE user_id=$1 AND ext_id=$2`
 )
 
@@ -215,6 +217,81 @@ func (dao ExtLinkDAO) Insert(ctx context.Context, data *ExtLinkRecord) error {
 	return err
 }
 
+func queryUpdateMultiExtLink(models []ExtLinkRecord) *advpg.QueryBuilder {
+	if len(models) == 0 {
+		return &advpg.QueryBuilder{}
+	}
+
+	q := advpg.NewQueryBuilderCap(sqlUpdateMultiHeadExtLink, 4*len(models), 1*len(models))
+
+	for i, model := range models {
+		if i == 0 {
+			q.AppendSQL("(")
+		} else {
+			q.AppendSQL(",(")
+		}
+
+		q.AppendPlaceholder()
+		q.AppendArgs(model.data.UserID)
+		q.AppendSQL(",")
+		q.AppendPlaceholder()
+		q.AppendArgs(model.data.ExternalID)
+		q.AppendSQL(",")
+		q.AppendSQL("NULL")
+		q.AppendSQL(",")
+		q.AppendPlaceholder()
+		q.AppendArgs(model.data.Status)
+		q.AppendSQL(",")
+		q.AppendPlaceholder()
+		q.AppendArgs(model.mutLinkCount)
+		q.AppendSQL(")")
+
+		q.AppendResults(&models[i].data.LinkCount)
+	}
+
+	q.AppendSQL(sqlUpdateMultiTailExtLink)
+
+	return q
+}
+
+func (dao ExtLinkDAO) UpdateMulti(ctx context.Context, records []ExtLinkRecord) error {
+	ctx = advpgconn.QueryInfoCtx(ctx, "ext_links", "")
+	q := queryUpdateMultiExtLink(records)
+	rows, err := dao.db.Query(ctx, q.SQL(), q.Args()...)
+	defer rows.Close()
+
+	if err == nil {
+		results := q.Results()
+		from := 0
+		to := 1
+
+		for rows.Next() {
+			if err = rows.Scan(results[from:to]...); err != nil {
+				break
+			}
+
+			from = to
+			to += 1
+		}
+
+		if err == nil {
+			err = rows.Err()
+		}
+
+		if from < len(results) {
+			err = fmt.Errorf("ExtLinkDAO.UpdateMulti: got %d records, but %d was expected", from/1, len(results)/1)
+		}
+	}
+
+	if err == nil {
+		for i := range records {
+			records[i].reset()
+		}
+	}
+
+	return err
+}
+
 func (model *ExtLinkRecord) queryFullUpdate() *advpg.SimpleQuery {
 	return advpg.NewSimpleQuery(
 		sqlFullUpdateExtLink+" WHERE user_id=$3 AND ext_id=$4"+sqlUpdateReturningExtLink,
@@ -301,11 +378,13 @@ func (dao ExtLinkDAO) Update(ctx context.Context, data *ExtLinkRecord) error {
 //// Seen ////
 
 const (
-	sqlSelectSeen     = `SELECT user_id, seen_at FROM seen`
-	sqlInsertHeadSeen = `INSERT INTO seen (user_id) VALUES `
-	sqlInsertTailSeen = ` ON CONFLICT (user_id) DO NOTHING RETURNING seen_at`
-	sqlInsertSeen     = sqlInsertHeadSeen + `($1)` + sqlInsertTailSeen
-	sqlFullUpdateSeen = `UPDATE seen SET seen_at=$1`
+	sqlSelectSeen          = `SELECT user_id, seen_at FROM seen`
+	sqlInsertHeadSeen      = `INSERT INTO seen (user_id) VALUES `
+	sqlInsertTailSeen      = ` ON CONFLICT (user_id) DO NOTHING RETURNING seen_at`
+	sqlInsertSeen          = sqlInsertHeadSeen + `($1)` + sqlInsertTailSeen
+	sqlFullUpdateSeen      = `UPDATE seen SET seen_at=$1`
+	sqlUpdateMultiHeadSeen = `UPDATE seen SET seen_at=(t::seen).seen_at FROM (VALUES `
+	sqlUpdateMultiTailSeen = `) t WHERE seen.user_id=(t::seen).user_id`
 )
 
 type Seen struct {
@@ -467,13 +546,49 @@ func (dao SeenDAO) InsertMulti(ctx context.Context, records []SeenRecord) error 
 			err = rows.Err()
 		}
 
-		if to < len(results) {
-			err = fmt.Errorf("SeenDAO.InsertMulti: got %d records, but %d was expected", to, len(results))
+	}
+
+	if err == nil {
+		for i := range records {
+			records[i].reset()
 		}
 	}
-	if errors.Is(err, sql.ErrNoRows) {
-		err = nil
+
+	return err
+}
+
+func queryUpdateMultiSeen(models []SeenRecord) *advpg.QueryBuilder {
+	if len(models) == 0 {
+		return &advpg.QueryBuilder{}
 	}
+
+	q := advpg.NewQueryBuilderCap(sqlUpdateMultiHeadSeen, 2*len(models), 0*len(models))
+
+	for i, model := range models {
+		if i == 0 {
+			q.AppendSQL("(")
+		} else {
+			q.AppendSQL(",(")
+		}
+
+		q.AppendPlaceholder()
+		q.AppendArgs(model.data.UserID)
+		q.AppendSQL(",")
+		q.AppendPlaceholder()
+		q.AppendArgs(model.data.SeenAt)
+		q.AppendSQL(")")
+
+	}
+
+	q.AppendSQL(sqlUpdateMultiTailSeen)
+
+	return q
+}
+
+func (dao SeenDAO) UpdateMulti(ctx context.Context, records []SeenRecord) error {
+	ctx = advpgconn.QueryInfoCtx(ctx, "seen", "")
+	q := queryUpdateMultiSeen(records)
+	_, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
 
 	if err == nil {
 		for i := range records {
@@ -561,6 +676,8 @@ const (
 	sqlInsertUser          = sqlInsertHeadUser + `($1, $2)` + sqlInsertTailUser
 	sqlFullUpdateUser      = `UPDATE users SET name=$1, type=$2, post_count=post_count+$3`
 	sqlUpdateReturningUser = ` RETURNING post_count, updated_at`
+	sqlUpdateMultiHeadUser = `UPDATE users SET name=(t::users).name, type=(t::users).type, post_count=users.post_count+(t::users).post_count FROM (VALUES `
+	sqlUpdateMultiTailUser = `) t WHERE users.id=(t::users).id RETURNING users.post_count, users.updated_at`
 	sqlSelectMutatorsUser  = `SELECT post_count FROM users WHERE id=$1`
 )
 
@@ -903,8 +1020,85 @@ func (dao UserDAO) InsertMulti(ctx context.Context, records []UserRecord) error 
 			err = rows.Err()
 		}
 
-		if to < len(results) {
-			err = fmt.Errorf("UserDAO.InsertMulti: got %d records, but %d was expected", to, len(results))
+		if from < len(results) {
+			err = fmt.Errorf("UserDAO.InsertMulti: got %d records, but %d was expected", from/4, len(results)/4)
+		}
+	}
+
+	if err == nil {
+		for i := range records {
+			records[i].reset()
+		}
+	}
+
+	return err
+}
+
+func queryUpdateMultiUser(models []UserRecord) *advpg.QueryBuilder {
+	if len(models) == 0 {
+		return &advpg.QueryBuilder{}
+	}
+
+	q := advpg.NewQueryBuilderCap(sqlUpdateMultiHeadUser, 4*len(models), 2*len(models))
+
+	for i, model := range models {
+		if i == 0 {
+			q.AppendSQL("(")
+		} else {
+			q.AppendSQL(",(")
+		}
+
+		q.AppendPlaceholder()
+		q.AppendArgs(model.data.ID)
+		q.AppendSQL(",")
+		q.AppendPlaceholder()
+		q.AppendArgs(model.data.Name)
+		q.AppendSQL(",")
+		q.AppendPlaceholder()
+		q.AppendArgs(model.data.Type)
+		q.AppendSQL(",")
+		q.AppendPlaceholder()
+		q.AppendArgs(model.mutPostCount)
+		q.AppendSQL(",")
+		q.AppendSQL("NULL")
+		q.AppendSQL(",")
+		q.AppendSQL("NULL")
+		q.AppendSQL(")")
+
+		q.AppendResults(&models[i].data.PostCount, &models[i].data.UpdatedAt)
+	}
+
+	q.AppendSQL(sqlUpdateMultiTailUser)
+
+	return q
+}
+
+func (dao UserDAO) UpdateMulti(ctx context.Context, records []UserRecord) error {
+	ctx = advpgconn.QueryInfoCtx(ctx, "users", "")
+	q := queryUpdateMultiUser(records)
+	rows, err := dao.db.Query(ctx, q.SQL(), q.Args()...)
+	defer rows.Close()
+
+	if err == nil {
+		results := q.Results()
+		from := 0
+		to := 2
+
+		for rows.Next() {
+			if err = rows.Scan(results[from:to]...); err != nil {
+				break
+			}
+
+			from = to
+			to += 2
+		}
+
+		if err == nil {
+			err = rows.Err()
+		}
+
+		if from < len(results) {
+			err = fmt.Errorf("UserDAO.UpdateMulti: got %d records, but %d was expected", from/2, len(results)/2)
 		}
 	}
 
@@ -1009,11 +1203,13 @@ func (dao UserDAO) Update(ctx context.Context, data *UserRecord) error {
 //// UserOptions ////
 
 const (
-	sqlSelectUserOptions     = `SELECT user_id, option_id, flag, option FROM user_options`
-	sqlInsertHeadUserOptions = `INSERT INTO user_options (user_id, option_id, flag) VALUES `
-	sqlInsertTailUserOptions = ` ON CONFLICT (user_id, option_id) DO UPDATE SET flag=EXCLUDED.flag, option=EXCLUDED.option RETURNING option`
-	sqlInsertUserOptions     = sqlInsertHeadUserOptions + `($1, $2, $3)` + sqlInsertTailUserOptions
-	sqlFullUpdateUserOptions = `UPDATE user_options SET flag=$1, option=$2`
+	sqlSelectUserOptions          = `SELECT user_id, option_id, flag, option FROM user_options`
+	sqlInsertHeadUserOptions      = `INSERT INTO user_options (user_id, option_id, flag) VALUES `
+	sqlInsertTailUserOptions      = ` ON CONFLICT (user_id, option_id) DO UPDATE SET flag=EXCLUDED.flag, option=EXCLUDED.option RETURNING option`
+	sqlInsertUserOptions          = sqlInsertHeadUserOptions + `($1, $2, $3)` + sqlInsertTailUserOptions
+	sqlFullUpdateUserOptions      = `UPDATE user_options SET flag=$1, option=$2`
+	sqlUpdateMultiHeadUserOptions = `UPDATE user_options SET flag=(t::user_options).flag, option=(t::user_options).option FROM (VALUES `
+	sqlUpdateMultiTailUserOptions = `) t WHERE user_options.user_id=(t::user_options).user_id AND user_options.option_id=(t::user_options).option_id`
 )
 
 type UserOptionsRecord struct {
@@ -1246,10 +1442,58 @@ func (dao UserOptionsDAO) InsertMulti(ctx context.Context, records []UserOptions
 			err = rows.Err()
 		}
 
-		if to < len(results) {
-			err = fmt.Errorf("UserOptionsDAO.InsertMulti: got %d records, but %d was expected", to, len(results))
+		if from < len(results) {
+			err = fmt.Errorf("UserOptionsDAO.InsertMulti: got %d records, but %d was expected", from/1, len(results)/1)
 		}
 	}
+
+	if err == nil {
+		for i := range records {
+			records[i].reset()
+		}
+	}
+
+	return err
+}
+
+func queryUpdateMultiUserOptions(models []UserOptionsRecord) *advpg.QueryBuilder {
+	if len(models) == 0 {
+		return &advpg.QueryBuilder{}
+	}
+
+	q := advpg.NewQueryBuilderCap(sqlUpdateMultiHeadUserOptions, 4*len(models), 0*len(models))
+
+	for i, model := range models {
+		if i == 0 {
+			q.AppendSQL("(")
+		} else {
+			q.AppendSQL(",(")
+		}
+
+		q.AppendPlaceholder()
+		q.AppendArgs(model.data.UserID)
+		q.AppendSQL(",")
+		q.AppendPlaceholder()
+		q.AppendArgs(model.data.OptionID)
+		q.AppendSQL(",")
+		q.AppendPlaceholder()
+		q.AppendArgs(model.data.Flag)
+		q.AppendSQL(",")
+		q.AppendPlaceholder()
+		q.AppendArgs(model.data.Option)
+		q.AppendSQL(")")
+
+	}
+
+	q.AppendSQL(sqlUpdateMultiTailUserOptions)
+
+	return q
+}
+
+func (dao UserOptionsDAO) UpdateMulti(ctx context.Context, records []UserOptionsRecord) error {
+	ctx = advpgconn.QueryInfoCtx(ctx, "user_options", "")
+	q := queryUpdateMultiUserOptions(records)
+	_, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
 
 	if err == nil {
 		for i := range records {

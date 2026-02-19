@@ -607,6 +607,206 @@ func TestSeenDAO(t *testing.T) {
 	})
 }
 
+func TestUpdateMultiUserDAO(t *testing.T) {
+	ctx, db, _ := connectDB(t)
+	userDAO := NewUserDAO(db)
+
+	// Insert 3 users
+	users := make([]UserRecord, 3)
+	for i := range users {
+		users[i] = *(User{
+			Name: "UpdateMulti User " + strconv.Itoa(i),
+			Type: i + 1,
+		}.Record())
+	}
+	must(t, userDAO.InsertMulti(ctx, users))
+
+	t.Run("multiple columns and UpdateByStorage", func(t *testing.T) {
+		// Modify multiple columns
+		users[0].SetName("Changed 0")
+		users[0].SetType(10)
+		users[1].SetName("Changed 1")
+		users[1].SetType(20)
+		users[2].SetName("Changed 2")
+		users[2].SetType(30)
+
+		updatedAtBefore := make([]time.Time, len(users))
+		for i := range users {
+			updatedAtBefore[i] = users[i].UpdatedAt()
+		}
+
+		must(t, userDAO.UpdateMulti(ctx, users))
+
+		// Verify changes persisted
+		for i, u := range users {
+			got, err := userDAO.SelectByID(ctx, u.ID())
+			must(t, err)
+
+			wantName := "Changed " + strconv.Itoa(i)
+			if got.Name() != wantName {
+				t.Fatalf("users[%d].Name: got %q, want %q", i, got.Name(), wantName)
+			}
+
+			wantType := (i + 1) * 10
+			if got.Type() != wantType {
+				t.Fatalf("users[%d].Type: got %d, want %d", i, got.Type(), wantType)
+			}
+
+			// UpdateByStorage: updated_at must be refreshed by the BEFORE UPDATE trigger
+			if !updatedAtBefore[i].Before(users[i].UpdatedAt()) {
+				t.Fatalf("users[%d].UpdatedAt wasn't refreshed by trigger: before=%v, after=%v", i, updatedAtBefore[i], users[i].UpdatedAt())
+			}
+		}
+	})
+
+	t.Run("mutators", func(t *testing.T) {
+		initialPostCounts := make([]int, len(users))
+		for i := range users {
+			initialPostCounts[i] = users[i].PostCount()
+		}
+
+		users[0].IncPostCount()
+		users[1].AddPostCount(5)
+		// users[2] gets 0 mutator delta — still valid
+
+		must(t, userDAO.UpdateMulti(ctx, users))
+
+		for i, u := range users {
+			got, err := userDAO.SelectByID(ctx, u.ID())
+			must(t, err)
+
+			var wantDelta int
+			switch i {
+			case 0:
+				wantDelta = 1
+			case 1:
+				wantDelta = 5
+			}
+
+			if got.PostCount() != initialPostCounts[i]+wantDelta {
+				t.Fatalf("users[%d].PostCount: got %d, want %d", i, got.PostCount(), initialPostCounts[i]+wantDelta)
+			}
+		}
+	})
+
+	t.Run("missing keys with RETURNING", func(t *testing.T) {
+		records := []UserRecord{
+			users[0],
+			*(User{ID: -999, Name: "ghost", Type: 0}.Record()),
+		}
+
+		err := userDAO.UpdateMulti(ctx, records)
+		if err == nil {
+			t.Fatal("expected error for partial RETURNING result, got nil")
+		}
+		if !strings.Contains(err.Error(), "got") || !strings.Contains(err.Error(), "expected") {
+			t.Fatalf("unexpected error message: %v", err)
+		}
+	})
+}
+
+func TestUpdateMultiExtLinkDAO(t *testing.T) {
+	ctx, db, _ := connectDB(t)
+	extDAO := NewExtLinkDAO(db)
+	userID := createUserID(t, db)
+	now := MyTime{Time: time.Now().Round(time.Second)}
+
+	// Insert 2 ext_links
+	exts := make([]ExtLinkRecord, 2)
+	for i := range exts {
+		exts[i] = *(ExtLink{
+			UserID:     userID,
+			ExternalID: 100 + i,
+			CreatedAt:  now,
+			Status:     i,
+		}.Record())
+	}
+
+	for i := range exts {
+		must(t, extDAO.Insert(ctx, &exts[i]))
+	}
+
+	t.Run("mutators with RETURNING", func(t *testing.T) {
+		initialCounts := make([]int, len(exts))
+		for i := range exts {
+			initialCounts[i] = exts[i].LinkCount()
+		}
+
+		exts[0].IncLinkCount()
+		exts[1].AddLinkCount(3)
+
+		must(t, extDAO.UpdateMulti(ctx, exts))
+
+		for i := range exts {
+			got, err := extDAO.SelectByPrimaryKey(ctx, userID, 100+i)
+			must(t, err)
+
+			var wantDelta int
+			switch i {
+			case 0:
+				wantDelta = 1
+			case 1:
+				wantDelta = 3
+			}
+
+			wantCount := initialCounts[i] + wantDelta
+			if got.LinkCount() != wantCount {
+				t.Fatalf("exts[%d].LinkCount: got %d, want %d", i, got.LinkCount(), wantCount)
+			}
+
+			// RETURNING value should match
+			if exts[i].LinkCount() != wantCount {
+				t.Fatalf("exts[%d].LinkCount from RETURNING: got %d, want %d", i, exts[i].LinkCount(), wantCount)
+			}
+		}
+	})
+}
+
+func TestUpdateMultiUserOptionsDAO(t *testing.T) {
+	ctx, db, _ := connectDB(t)
+	optDAO := NewUserOptionsDAO(db)
+	userID := createUserID(t, db)
+
+	// Insert 3 options
+	opts := make([]UserOptionsRecord, 3)
+	for i := range opts {
+		opts[i] = *(UserOptions{
+			UserID:   userID,
+			OptionID: i,
+			Flag:     false,
+			Option:   "original " + strconv.Itoa(i),
+		}.Record())
+	}
+	must(t, optDAO.InsertMulti(ctx, opts))
+
+	t.Run("multiple columns changed", func(t *testing.T) {
+		opts[0].SetFlag(true)
+		opts[0].SetOption("changed 0")
+		opts[1].SetFlag(true)
+		opts[1].SetOption("changed 1")
+		opts[2].SetOption("changed 2")
+
+		must(t, optDAO.UpdateMulti(ctx, opts))
+
+		gotOpts, err := optDAO.SelectByUserID(ctx, userID)
+		must(t, err)
+		cmpSlices(t, gotOpts, opts)
+	})
+
+	t.Run("missing keys without RETURNING", func(t *testing.T) {
+		records := []UserOptionsRecord{
+			opts[0],
+			*(UserOptions{UserID: -999, OptionID: -1, Flag: true, Option: "ghost"}.Record()),
+		}
+
+		// No RETURNING → Exec path → no error for missing keys
+		err := optDAO.UpdateMulti(ctx, records)
+		if err != nil {
+			t.Fatalf("expected no error for missing keys without RETURNING, got: %v", err)
+		}
+	})
+}
+
 func TestUserOptionsDAO(t *testing.T) {
 	ctx, db, ms := connectDB(t)
 	optDAO := NewUserOptionsDAO(db)
