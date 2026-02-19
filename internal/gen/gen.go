@@ -243,14 +243,14 @@ func (tm *TableModel) iterInsertArgs(needMutators bool) iter.Seq2[int, InsertArg
 	}
 }
 
-func (tm *TableModel) InsertMultiResultColumns() iter.Seq2[int, Column] {
+func (tm *TableModel) resultColumns(cols []*Column) iter.Seq2[int, Column] {
 	suffix := ""
 	if !tm.DisableActiveRecord {
 		suffix = "data."
 	}
 
 	return func(yield func(int, Column) bool) {
-		for i, col := range tm.InsertResultColumns {
+		for i, col := range cols {
 			multiCol := *col
 			multiCol.GoExpr = "models[i]." + suffix + col.GoName
 
@@ -259,6 +259,63 @@ func (tm *TableModel) InsertMultiResultColumns() iter.Seq2[int, Column] {
 			}
 		}
 	}
+}
+
+func (tm *TableModel) InsertMultiResultColumns() iter.Seq2[int, Column] {
+	return tm.resultColumns(tm.InsertResultColumns)
+}
+
+func (tm *TableModel) UpdateMultiResultColumns() iter.Seq2[int, Column] {
+	return tm.resultColumns(tm.UpdateResultColumns)
+}
+
+// UpdateMultiAllColumns iterates over all table columns in order, assigning each a kind
+// for the UpdateMulti VALUES clause. Columns not involved in the update (e.g. InitByStorage,
+// UpdateByStorage) are emitted as NULLs. This is required because UpdateMulti uses a composite
+// type cast (t::tablename) to infer column types, and the cast expects the VALUES row to have
+// the same number of columns as the table, in the same order.
+//
+// NULLs are safe even for NOT NULL columns: the composite type cast only performs type conversion
+// and does not enforce table-level constraints (NOT NULL is a property of the table, not of the
+// composite type that PostgreSQL auto-creates for it).
+func (tm *TableModel) UpdateMultiAllColumns() iter.Seq2[int, UpdateMultiCol] {
+	updateSet := make(map[*Column]struct{}, len(tm.UpdateValueColumns))
+	for _, col := range tm.UpdateValueColumns {
+		updateSet[col] = struct{}{}
+	}
+
+	mutatorSet := make(map[*Column]struct{}, len(tm.MutatorColumns))
+	for _, col := range tm.MutatorColumns {
+		mutatorSet[col] = struct{}{}
+	}
+
+	return func(yield func(int, UpdateMultiCol) bool) {
+		for i, col := range tm.Columns {
+			kind := "null"
+
+			_, isUpdate := updateSet[col]
+			_, isMutator := mutatorSet[col]
+
+			switch {
+			case col.IsPrimaryKey || isUpdate:
+				kind = "value"
+			case isMutator:
+				kind = "mutator"
+			}
+
+			if !yield(i, UpdateMultiCol{Column: col, Kind: kind}) {
+				return
+			}
+		}
+	}
+}
+
+func (tm *TableModel) UpdateMultiAlias() string {
+	if tm.Table.Table == "t" {
+		return "tt"
+	}
+
+	return "t"
 }
 
 func (tm *TableModel) RecordType() string {

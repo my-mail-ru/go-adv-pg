@@ -137,6 +137,31 @@ const (
 		sqlUpdateReturning{{$model.GoName}} = ` RETURNING
 			{{- range $i, $col := $model.UpdateResultColumns }}{{ if $i }},{{ end }} {{ template "sql_result" $col }}{{ end -}}
 	`{{ end }}
+	{{- if $model.UpdateValueColumns }}{{ $valuesAlias := $model.UpdateMultiAlias }}
+		sqlUpdateMultiHead{{$model.GoName}} = `UPDATE {{$model.Table.Table}} SET
+			{{- range $i, $col := $model.UpdateValueColumns -}}
+				{{ if $i }},{{ end }} {{$col.ColumnName}}=
+				{{- if $col.SQLValue -}}
+					{{simple_printf $col.SQLValue (printf "(%s::%s).%s" $valuesAlias $model.Table.Table $col.ColumnName)}}
+				{{- else -}}
+					({{$valuesAlias}}::{{$model.Table.Table}}).{{$col.ColumnName}}
+				{{- end -}}
+			{{- end -}}
+			{{- range $i, $col := $model.MutatorColumns -}}
+				{{ if or $i $model.UpdateValueColumns }},{{ end }} {{$col.ColumnName}}={{$model.Table.Table}}.{{$col.ColumnName}}+({{$valuesAlias}}::{{$model.Table.Table}}).{{$col.ColumnName}}
+			{{- end }} FROM (VALUES `
+		sqlUpdateMultiTail{{$model.GoName}} = `) {{$valuesAlias}} WHERE
+			{{- range $i, $col := $model.PrimaryKeyColumns }} {{ if $i }}AND {{ end -}}
+				{{$model.Table.Table}}.{{$col.ColumnName}}=({{$valuesAlias}}::{{$model.Table.Table}}).{{$col.ColumnName}}
+			{{- end -}}
+			{{- if $model.UpdateResultColumns }} RETURNING
+				{{- range $i, $col := $model.UpdateResultColumns }}{{ if $i }},{{ end }}
+					{{- if $col.SQLScan }} {{ simple_printf $col.SQLScan (print $model.Table.Table "." $col.ColumnName) -}}
+					{{- else }} {{$model.Table.Table}}.{{$col.ColumnName}}
+					{{- end -}}
+				{{- end -}}
+			{{- end }}`
+	{{- end }}
 	{{- if $model.MutatorColumns }}
 		sqlSelectMutators{{$model.GoName}} = `SELECT
 		{{- range $i, $col := $model.MutatorColumns -}}
@@ -497,16 +522,99 @@ func (dao {{$model.DAO}}) Insert(ctx context.Context, data *{{$model.RecordType}
 					err = rows.Err()
 				}
 
-				if to < len(results) {
-					err = fmt.Errorf("{{$model.DAO}}.InsertMulti: got %d records, but %d was expected", to, len(results))
+				{{ if not $model.OnConflictDoNothing -}}
+					if from < len(results) {
+						err = fmt.Errorf("{{$model.DAO}}.InsertMulti: got %d records, but %d was expected", from/{{len $model.InsertResultColumns}}, len(results)/{{len $model.InsertResultColumns}})
+					}
+				{{ end -}}
+			}
+		{{- else -}}
+			_, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
+		{{- end }}
+
+		{{ if not $model.DisableActiveRecord -}}
+			if err == nil {
+				for i := range records {
+					records[i].reset()
 				}
 			}
-			{{ if $model.OnConflictDoNothing -}}
 
-				if errors.Is(err, sql.ErrNoRows) {
-					err = nil
-				}
+		{{ end -}}
+		return err
+	}
+
+{{ end -}}
+
+{{ if $model.UpdateValueColumns -}}
+	func queryUpdateMulti{{$model.GoName}}(models []{{$model.RecordType}}) *{{$.AdvPgPkg}}.QueryBuilder {
+		if len(models) == 0 {
+			return &{{$.AdvPgPkg}}.QueryBuilder{}
+		}
+
+		q := {{$.AdvPgPkg}}.NewQueryBuilderCap(sqlUpdateMultiHead{{$model.GoName}}, {{add (len $model.PrimaryKeyColumns) (add (len $model.UpdateValueColumns) (len $model.MutatorColumns))}}*len(models), {{len $model.UpdateResultColumns}}*len(models))
+
+		for i, model := range models {
+			if i == 0 {
+				q.AppendSQL("(")
+			} else {
+				q.AppendSQL(",(")
+			}
+
+			{{ range $i, $col := $model.UpdateMultiAllColumns -}}
+				{{- if $i -}}
+					q.AppendSQL(",")
+				{{ end -}}
+				{{- if eq $col.Kind "null" -}}
+					q.AppendSQL("NULL")
+				{{- else if eq $col.Kind "mutator" -}}
+					q.AppendPlaceholder()
+					q.AppendArgs(model.mut{{to_upper_camel $col.GoName}})
+				{{- else -}}
+					q.AppendPlaceholder()
+					q.AppendArgs({{$col.GoExpr}})
+				{{- end }}
 			{{ end -}}
+			q.AppendSQL(")")
+
+			{{ if $model.UpdateResultColumns -}}
+				q.AppendResults({{ template "results" $model.UpdateMultiResultColumns }})
+			{{ end -}}
+		}
+
+		q.AppendSQL(sqlUpdateMultiTail{{$model.GoName}})
+
+		return q
+	}
+
+	func (dao {{$model.DAO}}) UpdateMulti(ctx context.Context, records []{{$model.RecordType}}) error {
+		ctx = {{$.AdvPgConnPkg}}.QueryInfoCtx(ctx, {{quote $model.Table.Table}}, "")
+		q := queryUpdateMulti{{$model.GoName}}(records)
+		{{ if $model.UpdateResultColumns -}}
+			rows, err :=dao.db.Query(ctx, q.SQL(), q.Args()...)
+			defer rows.Close()
+
+			if err == nil {
+				results := q.Results()
+				from := 0
+				to := {{len $model.UpdateResultColumns}}
+
+				for rows.Next() {
+					if err = rows.Scan(results[from:to]...); err != nil {
+						break
+					}
+
+					from = to
+					to += {{len $model.UpdateResultColumns}}
+				}
+
+				if err == nil {
+					err = rows.Err()
+				}
+
+				if from < len(results) {
+					err = fmt.Errorf("{{$model.DAO}}.UpdateMulti: got %d records, but %d was expected", from/{{len $model.UpdateResultColumns}}, len(results)/{{len $model.UpdateResultColumns}})
+				}
+			}
 		{{- else -}}
 			_, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
 		{{- end }}
