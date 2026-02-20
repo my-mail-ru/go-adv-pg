@@ -103,3 +103,87 @@ func TestUpdateMulti(t *testing.T) {
 		}
 	})
 }
+
+func TestDelete(t *testing.T) {
+	t.Run("User single PK", func(t *testing.T) {
+		m := User{ID: 42, Name: "test"}.Record()
+		q := m.queryDelete()
+		sql := q.SQL()
+
+		if sql != `DELETE FROM users WHERE id=$1` {
+			t.Error("unexpected SQL:", sql)
+		}
+		if len(q.Args()) != 1 {
+			t.Errorf("expected 1 arg, got %d", len(q.Args()))
+		}
+	})
+
+	t.Run("ExtLink composite PK", func(t *testing.T) {
+		m := ExtLink{UserID: 1, ExternalID: 2}.Record()
+		q := m.queryDelete()
+		sql := q.SQL()
+
+		if sql != `DELETE FROM ext_links WHERE user_id=$1 AND ext_id=$2` {
+			t.Error("unexpected SQL:", sql)
+		}
+		if len(q.Args()) != 2 {
+			t.Errorf("expected 2 args, got %d", len(q.Args()))
+		}
+	})
+}
+
+func TestDeleteMulti(t *testing.T) {
+	t.Run("empty slice", func(t *testing.T) {
+		q := queryDeleteMultiUser(nil)
+		if q.SQL() != "" {
+			t.Error("expected empty SQL for nil slice, got:", q.SQL())
+		}
+	})
+
+	t.Run("User single PK", func(t *testing.T) {
+		m1 := User{ID: 1}.Record()
+		m2 := User{ID: 2}.Record()
+		q := queryDeleteMultiUser([]UserRecord{*m1, *m2})
+		sql := q.SQL()
+
+		if !strings.Contains(sql, "DELETE FROM users WHERE") {
+			t.Error("missing DELETE FROM:", sql)
+		}
+		if !strings.Contains(sql, "id IN (") {
+			t.Error("missing IN clause:", sql)
+		}
+		if len(q.Args()) != 2 {
+			t.Errorf("expected 2 args, got %d", len(q.Args()))
+		}
+	})
+
+	t.Run("ExtLink composite PK", func(t *testing.T) {
+		m1 := ExtLink{UserID: 1, ExternalID: 10}.Record()
+		m2 := ExtLink{UserID: 2, ExternalID: 20}.Record()
+		q := queryDeleteMultiExtLink([]ExtLinkRecord{*m1, *m2})
+		sql := q.SQL()
+
+		if !strings.Contains(sql, "DELETE FROM ext_links WHERE") {
+			t.Error("missing DELETE FROM:", sql)
+		}
+		if !strings.Contains(sql, "(user_id, ext_id) IN (") {
+			t.Error("missing composite IN clause:", sql)
+		}
+		if len(q.Args()) != 4 {
+			t.Errorf("expected 4 args (2 per record), got %d", len(q.Args()))
+		}
+	})
+
+	t.Run("UserOptions composite PK", func(t *testing.T) {
+		m1 := UserOptions{UserID: 1, OptionID: 10}.Record()
+		q := queryDeleteMultiUserOptions([]UserOptionsRecord{*m1})
+		sql := q.SQL()
+
+		if !strings.Contains(sql, "(user_id, option_id) IN (") {
+			t.Error("missing composite IN clause:", sql)
+		}
+		if len(q.Args()) != 2 {
+			t.Errorf("expected 2 args, got %d", len(q.Args()))
+		}
+	})
+}

@@ -374,6 +374,65 @@ func (dao ExtLinkDAO) Update(ctx context.Context, data *ExtLinkRecord) error {
 
 	return err
 }
+func (model *ExtLinkRecord) queryDelete() *advpg.SimpleQuery {
+	return advpg.NewSimpleQuery(
+		`DELETE FROM ext_links WHERE user_id=$1 AND ext_id=$2`,
+		[]any{model.data.UserID, model.data.ExternalID},
+		nil,
+	)
+}
+
+func (dao ExtLinkDAO) Delete(ctx context.Context, data *ExtLinkRecord) error {
+	ctx = advpgconn.QueryInfoCtx(ctx, "ext_links", "")
+	q := data.queryDelete()
+	ct, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
+	if err != nil {
+		return err
+	}
+
+	if ct.RowsAffected() == 0 {
+		return sql.ErrNoRows
+	}
+
+	return nil
+}
+
+func queryDeleteMultiExtLink(models []ExtLinkRecord) *advpg.QueryBuilder {
+	if len(models) == 0 {
+		return &advpg.QueryBuilder{}
+	}
+
+	q := advpg.NewQueryBuilder(`DELETE FROM ext_links WHERE (user_id, ext_id) IN (`)
+
+	for i, model := range models {
+		if i == 0 {
+			q.AppendSQL("(")
+		} else {
+			q.AppendSQL(",(")
+		}
+		q.AppendSQL("$")
+		q.AppendPlaceholderNum()
+		q.AppendArgs(model.data.UserID)
+		q.AppendSQL(", $")
+		q.AppendPlaceholderNum()
+		q.AppendArgs(model.data.ExternalID)
+		q.AppendSQL(")")
+	}
+
+	q.AppendSQL(")")
+	return q
+}
+
+func (dao ExtLinkDAO) DeleteMulti(ctx context.Context, records []ExtLinkRecord) error {
+	if len(records) == 0 {
+		return nil
+	}
+
+	ctx = advpgconn.QueryInfoCtx(ctx, "ext_links", "")
+	q := queryDeleteMultiExtLink(records)
+	_, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
+	return err
+}
 
 //// Seen ////
 
@@ -664,6 +723,59 @@ func (dao SeenDAO) Update(ctx context.Context, data *SeenRecord) error {
 		data.reset()
 	}
 
+	return err
+}
+func (model *SeenRecord) queryDelete() *advpg.SimpleQuery {
+	return advpg.NewSimpleQuery(
+		`DELETE FROM seen WHERE user_id=$1`,
+		[]any{model.data.UserID},
+		nil,
+	)
+}
+
+func (dao SeenDAO) Delete(ctx context.Context, data *SeenRecord) error {
+	ctx = advpgconn.QueryInfoCtx(ctx, "seen", "")
+	q := data.queryDelete()
+	ct, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
+	if err != nil {
+		return err
+	}
+
+	if ct.RowsAffected() == 0 {
+		return sql.ErrNoRows
+	}
+
+	return nil
+}
+
+func queryDeleteMultiSeen(models []SeenRecord) *advpg.QueryBuilder {
+	if len(models) == 0 {
+		return &advpg.QueryBuilder{}
+	}
+
+	q := advpg.NewQueryBuilder(`DELETE FROM seen WHERE user_id IN (`)
+
+	for i, model := range models {
+		if i > 0 {
+			q.AppendSQL(",")
+		}
+		q.AppendSQL("$")
+		q.AppendPlaceholderNum()
+		q.AppendArgs(model.data.UserID)
+	}
+
+	q.AppendSQL(")")
+	return q
+}
+
+func (dao SeenDAO) DeleteMulti(ctx context.Context, records []SeenRecord) error {
+	if len(records) == 0 {
+		return nil
+	}
+
+	ctx = advpgconn.QueryInfoCtx(ctx, "seen", "")
+	q := queryDeleteMultiSeen(records)
+	_, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
 	return err
 }
 
@@ -1199,6 +1311,59 @@ func (dao UserDAO) Update(ctx context.Context, data *UserRecord) error {
 
 	return err
 }
+func (model *UserRecord) queryDelete() *advpg.SimpleQuery {
+	return advpg.NewSimpleQuery(
+		`DELETE FROM users WHERE id=$1`,
+		[]any{model.data.ID},
+		nil,
+	)
+}
+
+func (dao UserDAO) Delete(ctx context.Context, data *UserRecord) error {
+	ctx = advpgconn.QueryInfoCtx(ctx, "users", "")
+	q := data.queryDelete()
+	ct, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
+	if err != nil {
+		return err
+	}
+
+	if ct.RowsAffected() == 0 {
+		return sql.ErrNoRows
+	}
+
+	return nil
+}
+
+func queryDeleteMultiUser(models []UserRecord) *advpg.QueryBuilder {
+	if len(models) == 0 {
+		return &advpg.QueryBuilder{}
+	}
+
+	q := advpg.NewQueryBuilder(`DELETE FROM users WHERE id IN (`)
+
+	for i, model := range models {
+		if i > 0 {
+			q.AppendSQL(",")
+		}
+		q.AppendSQL("$")
+		q.AppendPlaceholderNum()
+		q.AppendArgs(model.data.ID)
+	}
+
+	q.AppendSQL(")")
+	return q
+}
+
+func (dao UserDAO) DeleteMulti(ctx context.Context, records []UserRecord) error {
+	if len(records) == 0 {
+		return nil
+	}
+
+	ctx = advpgconn.QueryInfoCtx(ctx, "users", "")
+	q := queryDeleteMultiUser(records)
+	_, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
+	return err
+}
 
 //// UserOptions ////
 
@@ -1583,6 +1748,65 @@ func (dao UserOptionsDAO) Update(ctx context.Context, data *UserOptionsRecord) e
 
 	return err
 }
+func (model *UserOptionsRecord) queryDelete() *advpg.SimpleQuery {
+	return advpg.NewSimpleQuery(
+		`DELETE FROM user_options WHERE user_id=$1 AND option_id=$2`,
+		[]any{model.data.UserID, model.data.OptionID},
+		nil,
+	)
+}
+
+func (dao UserOptionsDAO) Delete(ctx context.Context, data *UserOptionsRecord) error {
+	ctx = advpgconn.QueryInfoCtx(ctx, "user_options", "")
+	q := data.queryDelete()
+	ct, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
+	if err != nil {
+		return err
+	}
+
+	if ct.RowsAffected() == 0 {
+		return sql.ErrNoRows
+	}
+
+	return nil
+}
+
+func queryDeleteMultiUserOptions(models []UserOptionsRecord) *advpg.QueryBuilder {
+	if len(models) == 0 {
+		return &advpg.QueryBuilder{}
+	}
+
+	q := advpg.NewQueryBuilder(`DELETE FROM user_options WHERE (user_id, option_id) IN (`)
+
+	for i, model := range models {
+		if i == 0 {
+			q.AppendSQL("(")
+		} else {
+			q.AppendSQL(",(")
+		}
+		q.AppendSQL("$")
+		q.AppendPlaceholderNum()
+		q.AppendArgs(model.data.UserID)
+		q.AppendSQL(", $")
+		q.AppendPlaceholderNum()
+		q.AppendArgs(model.data.OptionID)
+		q.AppendSQL(")")
+	}
+
+	q.AppendSQL(")")
+	return q
+}
+
+func (dao UserOptionsDAO) DeleteMulti(ctx context.Context, records []UserOptionsRecord) error {
+	if len(records) == 0 {
+		return nil
+	}
+
+	ctx = advpgconn.QueryInfoCtx(ctx, "user_options", "")
+	q := queryDeleteMultiUserOptions(records)
+	_, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
+	return err
+}
 
 //// UserViews ////
 
@@ -1756,5 +1980,58 @@ func (dao UserViewsDAO) Update(ctx context.Context, data *UserViewsRecord) error
 		data.reset()
 	}
 
+	return err
+}
+func (model *UserViewsRecord) queryDelete() *advpg.SimpleQuery {
+	return advpg.NewSimpleQuery(
+		`DELETE FROM user_views WHERE user_id=$1`,
+		[]any{model.data.UserID},
+		nil,
+	)
+}
+
+func (dao UserViewsDAO) Delete(ctx context.Context, data *UserViewsRecord) error {
+	ctx = advpgconn.QueryInfoCtx(ctx, "user_views", "")
+	q := data.queryDelete()
+	ct, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
+	if err != nil {
+		return err
+	}
+
+	if ct.RowsAffected() == 0 {
+		return sql.ErrNoRows
+	}
+
+	return nil
+}
+
+func queryDeleteMultiUserViews(models []UserViewsRecord) *advpg.QueryBuilder {
+	if len(models) == 0 {
+		return &advpg.QueryBuilder{}
+	}
+
+	q := advpg.NewQueryBuilder(`DELETE FROM user_views WHERE user_id IN (`)
+
+	for i, model := range models {
+		if i > 0 {
+			q.AppendSQL(",")
+		}
+		q.AppendSQL("$")
+		q.AppendPlaceholderNum()
+		q.AppendArgs(model.data.UserID)
+	}
+
+	q.AppendSQL(")")
+	return q
+}
+
+func (dao UserViewsDAO) DeleteMulti(ctx context.Context, records []UserViewsRecord) error {
+	if len(records) == 0 {
+		return nil
+	}
+
+	ctx = advpgconn.QueryInfoCtx(ctx, "user_views", "")
+	q := queryDeleteMultiUserViews(records)
+	_, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
 	return err
 }
