@@ -461,7 +461,7 @@ func (dao {{$model.DAO}}) Insert(ctx context.Context, data *{{$model.RecordType}
 		_, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
 	{{- end }}
 
-	{{ if not $model.DisableActiveRecord -}}
+	{{ if and (not $model.DisableActiveRecord) (or $model.UpdateValueColumns $model.MutatorColumns) -}}
 		if err == nil {
 			data.reset()
 		}
@@ -476,7 +476,7 @@ func (dao {{$model.DAO}}) Insert(ctx context.Context, data *{{$model.RecordType}
 			return &{{$.AdvPgPkg}}.QueryBuilder{}
 		}
 
-		q := {{$.AdvPgPkg}}.NewQueryBuilderCap(sqlInsertHead{{$model.GoName}}, {{len $model.InsertValueColumns}}*len(models), {{len $model.InsertResultColumns}}*len(models))
+		q := {{$.AdvPgPkg}}.NewQueryBuilderCap(sqlInsertHead{{$model.GoName}}, {{len $model.InsertValueColumns}}*len(models), {{if $model.InsertResultColumns}}{{len $model.InsertResultColumns}}*len(models){{else}}0{{end}})
 
 		for i, model := range models {
 			if i == 0 {
@@ -542,7 +542,7 @@ func (dao {{$model.DAO}}) Insert(ctx context.Context, data *{{$model.RecordType}
 			_, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
 		{{- end }}
 
-		{{ if not $model.DisableActiveRecord -}}
+		{{ if and (not $model.DisableActiveRecord) (or $model.UpdateValueColumns $model.MutatorColumns) -}}
 			if err == nil {
 				for i := range records {
 					records[i].reset()
@@ -561,7 +561,7 @@ func (dao {{$model.DAO}}) Insert(ctx context.Context, data *{{$model.RecordType}
 			return &{{$.AdvPgPkg}}.QueryBuilder{}
 		}
 
-		q := {{$.AdvPgPkg}}.NewQueryBuilderCap(sqlUpdateMultiHead{{$model.GoName}}, {{add (len $model.PrimaryKeyColumns) (add (len $model.UpdateValueColumns) (len $model.MutatorColumns))}}*len(models), {{len $model.UpdateResultColumns}}*len(models))
+		q := {{$.AdvPgPkg}}.NewQueryBuilderCap(sqlUpdateMultiHead{{$model.GoName}}, {{add (len $model.PrimaryKeyColumns) (add (len $model.UpdateValueColumns) (len $model.MutatorColumns))}}*len(models), {{if $model.UpdateResultColumns}}{{len $model.UpdateResultColumns}}*len(models){{else}}0{{end}})
 
 		for i, model := range models {
 			if i == 0 {
@@ -633,7 +633,7 @@ func (dao {{$model.DAO}}) Insert(ctx context.Context, data *{{$model.RecordType}
 			_, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
 		{{- end }}
 
-		{{ if not $model.DisableActiveRecord -}}
+		{{ if and (not $model.DisableActiveRecord) (or $model.UpdateValueColumns $model.MutatorColumns) -}}
 			if err == nil {
 				for i := range records {
 					records[i].reset()
@@ -675,19 +675,21 @@ func (dao {{$model.DAO}}) Insert(ctx context.Context, data *{{$model.RecordType}
 		ctx = {{$.AdvPgConnPkg}}.QueryInfoCtx(ctx, {{quote $model.Table.Table}}, "")
 		q := data.queryFullUpdate()
 		{{ if $model.UpdateResultColumns -}}
-			return dao.db.QueryRow(ctx, q.SQL(), q.Args()...).Scan(q.Results()...)
+			err := dao.db.QueryRow(ctx, q.SQL(), q.Args()...).Scan(q.Results()...)
 		{{- else -}}
 			ct, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
-			if err != nil {
-				return err
+			if err == nil && ct.RowsAffected() == 0 {
+				err = sql.ErrNoRows
 			}
-
-			if ct.RowsAffected() == 0 {
-				return sql.ErrNoRows
-			}
-
-			return nil
 		{{- end }}
+
+		{{ if and (not $model.DisableActiveRecord) (or $model.UpdateValueColumns $model.MutatorColumns) -}}
+			if err == nil {
+				data.reset()
+			}
+
+		{{ end -}}
+		return err
 	}
 {{ end -}}
 
@@ -762,6 +764,7 @@ func (dao {{$model.DAO}}) Insert(ctx context.Context, data *{{$model.RecordType}
 
 	{{ end -}}
 
+	{{ if or $model.UpdateValueColumns $model.MutatorColumns -}}
 	func (model *{{$model.RecordType}}) reset() {
 		{{ if $model.UpdateValueColumns -}}
 			model.updateMask = 0
@@ -770,6 +773,7 @@ func (dao {{$model.DAO}}) Insert(ctx context.Context, data *{{$model.RecordType}
 			model.mut{{to_upper_camel $col.GoName}} = 0
 		{{ end -}}
 	}
+	{{ end -}}
 
 	func (dao {{$model.DAO}}) Update(ctx context.Context, data *{{$model.RecordType}}) error {
 		q := 

@@ -325,7 +325,13 @@ func (model *ExtLinkRecord) queryFullUpdate() *advpg.SimpleQuery {
 func (dao ExtLinkDAO) FullUpdate(ctx context.Context, data *ExtLinkRecord) error {
 	ctx = advpgconn.QueryInfoCtx(ctx, "ext_links", "")
 	q := data.queryFullUpdate()
-	return dao.db.QueryRow(ctx, q.SQL(), q.Args()...).Scan(q.Results()...)
+	err := dao.db.QueryRow(ctx, q.SQL(), q.Args()...).Scan(q.Results()...)
+
+	if err == nil {
+		data.reset()
+	}
+
+	return err
 }
 
 func (model *ExtLinkRecord) queryUpdate() *advpg.QueryBuilder {
@@ -386,7 +392,6 @@ func (model *ExtLinkRecord) reset() {
 	model.updateMask = 0
 	model.mutLinkCount = 0
 }
-
 func (dao ExtLinkDAO) Update(ctx context.Context, data *ExtLinkRecord) error {
 	q := advpg.Query(data.queryUpdate())
 	index := ""
@@ -654,7 +659,7 @@ func queryUpdateMultiSeen(models []SeenRecord) *advpg.QueryBuilder {
 		return &advpg.QueryBuilder{}
 	}
 
-	q := advpg.NewQueryBuilderCap(sqlUpdateMultiHeadSeen, 2*len(models), 0*len(models))
+	q := advpg.NewQueryBuilderCap(sqlUpdateMultiHeadSeen, 2*len(models), 0)
 
 	for i, model := range models {
 		if i == 0 {
@@ -703,15 +708,15 @@ func (dao SeenDAO) FullUpdate(ctx context.Context, data *SeenRecord) error {
 	ctx = advpgconn.QueryInfoCtx(ctx, "seen", "")
 	q := data.queryFullUpdate()
 	ct, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
-	if err != nil {
-		return err
+	if err == nil && ct.RowsAffected() == 0 {
+		err = sql.ErrNoRows
 	}
 
-	if ct.RowsAffected() == 0 {
-		return sql.ErrNoRows
+	if err == nil {
+		data.reset()
 	}
 
-	return nil
+	return err
 }
 
 func (model *SeenRecord) queryUpdate() *advpg.QueryBuilder {
@@ -739,7 +744,6 @@ func (model *SeenRecord) queryUpdate() *advpg.QueryBuilder {
 func (model *SeenRecord) reset() {
 	model.updateMask = 0
 }
-
 func (dao SeenDAO) Update(ctx context.Context, data *SeenRecord) error {
 	q := data.queryUpdate()
 	query := q.SQL()
@@ -1270,7 +1274,13 @@ func (model *UserRecord) queryFullUpdate() *advpg.SimpleQuery {
 func (dao UserDAO) FullUpdate(ctx context.Context, data *UserRecord) error {
 	ctx = advpgconn.QueryInfoCtx(ctx, "users", "")
 	q := data.queryFullUpdate()
-	return dao.db.QueryRow(ctx, q.SQL(), q.Args()...).Scan(q.Results()...)
+	err := dao.db.QueryRow(ctx, q.SQL(), q.Args()...).Scan(q.Results()...)
+
+	if err == nil {
+		data.reset()
+	}
+
+	return err
 }
 
 func (model *UserRecord) queryUpdate() *advpg.QueryBuilder {
@@ -1328,7 +1338,6 @@ func (model *UserRecord) reset() {
 	model.updateMask = 0
 	model.mutPostCount = 0
 }
-
 func (dao UserDAO) Update(ctx context.Context, data *UserRecord) error {
 	q := advpg.Query(data.queryUpdate())
 	index := ""
@@ -1664,7 +1673,7 @@ func queryUpdateMultiUserOptions(models []UserOptionsRecord) *advpg.QueryBuilder
 		return &advpg.QueryBuilder{}
 	}
 
-	q := advpg.NewQueryBuilderCap(sqlUpdateMultiHeadUserOptions, 4*len(models), 0*len(models))
+	q := advpg.NewQueryBuilderCap(sqlUpdateMultiHeadUserOptions, 4*len(models), 0)
 
 	for i, model := range models {
 		if i == 0 {
@@ -1719,15 +1728,15 @@ func (dao UserOptionsDAO) FullUpdate(ctx context.Context, data *UserOptionsRecor
 	ctx = advpgconn.QueryInfoCtx(ctx, "user_options", "")
 	q := data.queryFullUpdate()
 	ct, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
-	if err != nil {
-		return err
+	if err == nil && ct.RowsAffected() == 0 {
+		err = sql.ErrNoRows
 	}
 
-	if ct.RowsAffected() == 0 {
-		return sql.ErrNoRows
+	if err == nil {
+		data.reset()
 	}
 
-	return nil
+	return err
 }
 
 func (model *UserOptionsRecord) queryUpdate() *advpg.QueryBuilder {
@@ -1767,7 +1776,6 @@ func (model *UserOptionsRecord) queryUpdate() *advpg.QueryBuilder {
 func (model *UserOptionsRecord) reset() {
 	model.updateMask = 0
 }
-
 func (dao UserOptionsDAO) Update(ctx context.Context, data *UserOptionsRecord) error {
 	q := data.queryUpdate()
 	query := q.SQL()
@@ -2004,7 +2012,6 @@ func (model *UserViewsRecord) querySelectMutators() *advpg.SimpleQuery {
 func (model *UserViewsRecord) reset() {
 	model.mutViews = 0
 }
-
 func (dao UserViewsDAO) Update(ctx context.Context, data *UserViewsRecord) error {
 	q := advpg.Query(data.queryUpdate())
 	index := ""

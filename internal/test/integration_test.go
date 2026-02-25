@@ -928,6 +928,54 @@ func TestUpdateMultiUserOptionsDAO(t *testing.T) {
 	})
 }
 
+func TestResetAfterOperation(t *testing.T) {
+	ctx, db, _ := connectDB(t)
+	optDAO := NewUserOptionsDAO(db)
+	errDAO := NewUserOptionsDAO(errDB{})
+	userID := createUserID(t, db)
+
+	t.Run("Insert resets record", func(t *testing.T) {
+		rec := UserOptions{UserID: userID, OptionID: 500, Flag: true, Option: "ins"}.Record()
+		rec.SetFlag(false)
+		must(t, optDAO.Insert(ctx, rec))
+		// After Insert, updateMask should be reset; smart Update on errDB must skip query.
+		must(t, errDAO.Update(ctx, rec))
+	})
+
+	t.Run("FullUpdate resets record", func(t *testing.T) {
+		rec := UserOptions{UserID: userID, OptionID: 500, Flag: true, Option: "upd"}.Record()
+		rec.SetOption("full-updated")
+		must(t, optDAO.FullUpdate(ctx, rec))
+		must(t, errDAO.Update(ctx, rec))
+	})
+
+	t.Run("InsertMulti resets records", func(t *testing.T) {
+		recs := []UserOptionsRecord{
+			*(UserOptions{UserID: userID, OptionID: 501, Flag: true, Option: "multi1"}.Record()),
+			*(UserOptions{UserID: userID, OptionID: 502, Flag: false, Option: "multi2"}.Record()),
+		}
+		recs[0].SetOption("changed")
+		recs[1].SetFlag(true)
+		must(t, optDAO.InsertMulti(ctx, recs))
+		for i := range recs {
+			must(t, errDAO.Update(ctx, &recs[i]))
+		}
+	})
+
+	t.Run("UpdateMulti resets records", func(t *testing.T) {
+		recs := []UserOptionsRecord{
+			*(UserOptions{UserID: userID, OptionID: 501, Flag: false, Option: "um1"}.Record()),
+			*(UserOptions{UserID: userID, OptionID: 502, Flag: true, Option: "um2"}.Record()),
+		}
+		recs[0].SetOption("multi-updated-1")
+		recs[1].SetFlag(false)
+		must(t, optDAO.UpdateMulti(ctx, recs))
+		for i := range recs {
+			must(t, errDAO.Update(ctx, &recs[i]))
+		}
+	})
+}
+
 func TestUserOptionsDAO(t *testing.T) {
 	ctx, db, ms := connectDB(t)
 	optDAO := NewUserOptionsDAO(db)
