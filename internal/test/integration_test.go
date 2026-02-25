@@ -850,3 +850,107 @@ func TestUserOptionsDAO(t *testing.T) {
 		}: 1,
 	})
 }
+
+func TestDeleteUserDAO(t *testing.T) {
+	ctx, db, _ := connectDB(t)
+	userDAO := NewUserDAO(db)
+
+	t.Run("Delete non-existent record", func(t *testing.T) {
+		user := User{ID: -10}.Record()
+		err := userDAO.Delete(ctx, user)
+		if !errors.Is(err, sql.ErrNoRows) {
+			t.Fatalf("got %v, expected sql.ErrNoRows", err)
+		}
+	})
+
+	t.Run("Delete existing record", func(t *testing.T) {
+		user := User{Name: "ToDelete", Type: 1}.Record()
+		must(t, userDAO.Insert(ctx, user))
+
+		must(t, userDAO.Delete(ctx, user))
+
+		_, err := userDAO.SelectByID(ctx, user.ID())
+		if !errors.Is(err, sql.ErrNoRows) {
+			t.Fatalf("record should be deleted, but SelectByID returned: %v", err)
+		}
+	})
+
+	t.Run("DeleteMulti empty slice", func(t *testing.T) {
+		must(t, userDAO.DeleteMulti(ctx, nil))
+	})
+
+	t.Run("DeleteMulti", func(t *testing.T) {
+		users := make([]UserRecord, 3)
+		for i := range users {
+			users[i] = *(User{
+				Name: "DeleteMulti " + strconv.Itoa(i),
+				Type: i,
+			}.Record())
+		}
+		must(t, userDAO.InsertMulti(ctx, users))
+
+		// Mix existing and non-existing records; DeleteMulti must not error.
+		records := make([]UserRecord, len(users), len(users)+1)
+		copy(records, users)
+		records = append(records, *(User{ID: -999}.Record()))
+		must(t, userDAO.DeleteMulti(ctx, records))
+
+		for i, u := range users {
+			_, err := userDAO.SelectByID(ctx, u.ID())
+			if !errors.Is(err, sql.ErrNoRows) {
+				t.Fatalf("users[%d] should be deleted, but SelectByID returned: %v", i, err)
+			}
+		}
+	})
+}
+
+func TestDeleteExtLinkDAO(t *testing.T) {
+	ctx, db, _ := connectDB(t)
+	extDAO := NewExtLinkDAO(db)
+	userID := createUserID(t, db)
+	now := MyTime{Time: time.Now().Round(time.Second)}
+
+	t.Run("Delete non-existent record", func(t *testing.T) {
+		ext := ExtLink{UserID: -10, ExternalID: -20}.Record()
+		err := extDAO.Delete(ctx, ext)
+		if !errors.Is(err, sql.ErrNoRows) {
+			t.Fatalf("got %v, expected sql.ErrNoRows", err)
+		}
+	})
+
+	t.Run("Delete existing record", func(t *testing.T) {
+		ext := ExtLink{UserID: userID, ExternalID: 500, CreatedAt: now, Status: 1}.Record()
+		must(t, extDAO.Insert(ctx, ext))
+
+		must(t, extDAO.Delete(ctx, ext))
+
+		_, err := extDAO.SelectByPrimaryKey(ctx, userID, 500)
+		if !errors.Is(err, sql.ErrNoRows) {
+			t.Fatalf("record should be deleted, but SelectByPrimaryKey returned: %v", err)
+		}
+	})
+
+	t.Run("DeleteMulti", func(t *testing.T) {
+		exts := make([]ExtLinkRecord, 3)
+		for i := range exts {
+			exts[i] = *(ExtLink{
+				UserID:     userID,
+				ExternalID: 600 + i,
+				CreatedAt:  now,
+				Status:     i,
+			}.Record())
+		}
+		for i := range exts {
+			must(t, extDAO.Insert(ctx, &exts[i]))
+		}
+
+		must(t, extDAO.DeleteMulti(ctx, exts))
+
+		for i, ext := range exts {
+			_, err := extDAO.SelectByPrimaryKey(ctx, ext.UserID(), ext.ExternalID())
+			if !errors.Is(err, sql.ErrNoRows) {
+				t.Fatalf("exts[%d] should be deleted, but SelectByPrimaryKey returned: %v", i, err)
+			}
+		}
+	})
+}

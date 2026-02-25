@@ -27,6 +27,9 @@ const (
 	sqlUpdateMultiHeadExtLink = `UPDATE ext_links SET status=(t::ext_links).status, link_count=ext_links.link_count+(t::ext_links).link_count FROM (VALUES `
 	sqlUpdateMultiTailExtLink = `) t WHERE ext_links.user_id=(t::ext_links).user_id AND ext_links.ext_id=(t::ext_links).ext_id RETURNING ext_links.link_count`
 	sqlSelectMutatorsExtLink  = `SELECT link_count FROM ext_links WHERE user_id=$1 AND ext_id=$2`
+
+	sqlDeleteExtLink          = `DELETE FROM ext_links WHERE user_id=$1 AND ext_id=$2`
+	sqlDeleteMultiHeadExtLink = `DELETE FROM ext_links WHERE (user_id, ext_id) IN (`
 )
 
 type ExtLinkRecord struct {
@@ -374,6 +377,65 @@ func (dao ExtLinkDAO) Update(ctx context.Context, data *ExtLinkRecord) error {
 
 	return err
 }
+func (model *ExtLinkRecord) queryDelete() *advpg.SimpleQuery {
+	return advpg.NewSimpleQuery(
+		sqlDeleteExtLink,
+		[]any{model.data.UserID, model.data.ExternalID},
+		nil,
+	)
+}
+
+func (dao ExtLinkDAO) Delete(ctx context.Context, data *ExtLinkRecord) error {
+	ctx = advpgconn.QueryInfoCtx(ctx, "ext_links", "")
+	q := data.queryDelete()
+	ct, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
+	if err != nil {
+		return err
+	}
+
+	if ct.RowsAffected() == 0 {
+		return sql.ErrNoRows
+	}
+
+	return nil
+}
+
+func queryDeleteMultiExtLink(models []ExtLinkRecord) *advpg.QueryBuilder {
+	if len(models) == 0 {
+		return &advpg.QueryBuilder{}
+	}
+
+	q := advpg.NewQueryBuilder(sqlDeleteMultiHeadExtLink)
+
+	for i, model := range models {
+		if i == 0 {
+			q.AppendSQL("(")
+		} else {
+			q.AppendSQL(",(")
+		}
+		q.AppendSQL("$")
+		q.AppendPlaceholderNum()
+		q.AppendArgs(model.data.UserID)
+		q.AppendSQL(", $")
+		q.AppendPlaceholderNum()
+		q.AppendArgs(model.data.ExternalID)
+		q.AppendSQL(")")
+	}
+
+	q.AppendSQL(")")
+	return q
+}
+
+func (dao ExtLinkDAO) DeleteMulti(ctx context.Context, records []ExtLinkRecord) error {
+	if len(records) == 0 {
+		return nil
+	}
+
+	ctx = advpgconn.QueryInfoCtx(ctx, "ext_links", "")
+	q := queryDeleteMultiExtLink(records)
+	_, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
+	return err
+}
 
 //// Seen ////
 
@@ -385,6 +447,8 @@ const (
 	sqlFullUpdateSeen      = `UPDATE seen SET seen_at=$1`
 	sqlUpdateMultiHeadSeen = `UPDATE seen SET seen_at=(t::seen).seen_at FROM (VALUES `
 	sqlUpdateMultiTailSeen = `) t WHERE seen.user_id=(t::seen).user_id`
+	sqlDeleteSeen          = `DELETE FROM seen WHERE user_id=$1`
+	sqlDeleteMultiHeadSeen = `DELETE FROM seen WHERE user_id IN (`
 )
 
 type Seen struct {
@@ -666,6 +730,59 @@ func (dao SeenDAO) Update(ctx context.Context, data *SeenRecord) error {
 
 	return err
 }
+func (model *SeenRecord) queryDelete() *advpg.SimpleQuery {
+	return advpg.NewSimpleQuery(
+		sqlDeleteSeen,
+		[]any{model.data.UserID},
+		nil,
+	)
+}
+
+func (dao SeenDAO) Delete(ctx context.Context, data *SeenRecord) error {
+	ctx = advpgconn.QueryInfoCtx(ctx, "seen", "")
+	q := data.queryDelete()
+	ct, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
+	if err != nil {
+		return err
+	}
+
+	if ct.RowsAffected() == 0 {
+		return sql.ErrNoRows
+	}
+
+	return nil
+}
+
+func queryDeleteMultiSeen(models []SeenRecord) *advpg.QueryBuilder {
+	if len(models) == 0 {
+		return &advpg.QueryBuilder{}
+	}
+
+	q := advpg.NewQueryBuilder(sqlDeleteMultiHeadSeen)
+
+	for i, model := range models {
+		if i > 0 {
+			q.AppendSQL(",")
+		}
+		q.AppendSQL("$")
+		q.AppendPlaceholderNum()
+		q.AppendArgs(model.data.UserID)
+	}
+
+	q.AppendSQL(")")
+	return q
+}
+
+func (dao SeenDAO) DeleteMulti(ctx context.Context, records []SeenRecord) error {
+	if len(records) == 0 {
+		return nil
+	}
+
+	ctx = advpgconn.QueryInfoCtx(ctx, "seen", "")
+	q := queryDeleteMultiSeen(records)
+	_, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
+	return err
+}
 
 //// User ////
 
@@ -679,6 +796,9 @@ const (
 	sqlUpdateMultiHeadUser = `UPDATE users SET name=(t::users).name, type=(t::users).type, post_count=users.post_count+(t::users).post_count FROM (VALUES `
 	sqlUpdateMultiTailUser = `) t WHERE users.id=(t::users).id RETURNING users.post_count, users.updated_at`
 	sqlSelectMutatorsUser  = `SELECT post_count FROM users WHERE id=$1`
+
+	sqlDeleteUser          = `DELETE FROM users WHERE id=$1`
+	sqlDeleteMultiHeadUser = `DELETE FROM users WHERE id IN (`
 )
 
 type UserRecord struct {
@@ -1199,6 +1319,59 @@ func (dao UserDAO) Update(ctx context.Context, data *UserRecord) error {
 
 	return err
 }
+func (model *UserRecord) queryDelete() *advpg.SimpleQuery {
+	return advpg.NewSimpleQuery(
+		sqlDeleteUser,
+		[]any{model.data.ID},
+		nil,
+	)
+}
+
+func (dao UserDAO) Delete(ctx context.Context, data *UserRecord) error {
+	ctx = advpgconn.QueryInfoCtx(ctx, "users", "")
+	q := data.queryDelete()
+	ct, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
+	if err != nil {
+		return err
+	}
+
+	if ct.RowsAffected() == 0 {
+		return sql.ErrNoRows
+	}
+
+	return nil
+}
+
+func queryDeleteMultiUser(models []UserRecord) *advpg.QueryBuilder {
+	if len(models) == 0 {
+		return &advpg.QueryBuilder{}
+	}
+
+	q := advpg.NewQueryBuilder(sqlDeleteMultiHeadUser)
+
+	for i, model := range models {
+		if i > 0 {
+			q.AppendSQL(",")
+		}
+		q.AppendSQL("$")
+		q.AppendPlaceholderNum()
+		q.AppendArgs(model.data.ID)
+	}
+
+	q.AppendSQL(")")
+	return q
+}
+
+func (dao UserDAO) DeleteMulti(ctx context.Context, records []UserRecord) error {
+	if len(records) == 0 {
+		return nil
+	}
+
+	ctx = advpgconn.QueryInfoCtx(ctx, "users", "")
+	q := queryDeleteMultiUser(records)
+	_, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
+	return err
+}
 
 //// UserOptions ////
 
@@ -1210,6 +1383,8 @@ const (
 	sqlFullUpdateUserOptions      = `UPDATE user_options SET flag=$1, option=$2`
 	sqlUpdateMultiHeadUserOptions = `UPDATE user_options SET flag=(t::user_options).flag, option=(t::user_options).option FROM (VALUES `
 	sqlUpdateMultiTailUserOptions = `) t WHERE user_options.user_id=(t::user_options).user_id AND user_options.option_id=(t::user_options).option_id`
+	sqlDeleteUserOptions          = `DELETE FROM user_options WHERE user_id=$1 AND option_id=$2`
+	sqlDeleteMultiHeadUserOptions = `DELETE FROM user_options WHERE (user_id, option_id) IN (`
 )
 
 type UserOptionsRecord struct {
@@ -1583,6 +1758,65 @@ func (dao UserOptionsDAO) Update(ctx context.Context, data *UserOptionsRecord) e
 
 	return err
 }
+func (model *UserOptionsRecord) queryDelete() *advpg.SimpleQuery {
+	return advpg.NewSimpleQuery(
+		sqlDeleteUserOptions,
+		[]any{model.data.UserID, model.data.OptionID},
+		nil,
+	)
+}
+
+func (dao UserOptionsDAO) Delete(ctx context.Context, data *UserOptionsRecord) error {
+	ctx = advpgconn.QueryInfoCtx(ctx, "user_options", "")
+	q := data.queryDelete()
+	ct, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
+	if err != nil {
+		return err
+	}
+
+	if ct.RowsAffected() == 0 {
+		return sql.ErrNoRows
+	}
+
+	return nil
+}
+
+func queryDeleteMultiUserOptions(models []UserOptionsRecord) *advpg.QueryBuilder {
+	if len(models) == 0 {
+		return &advpg.QueryBuilder{}
+	}
+
+	q := advpg.NewQueryBuilder(sqlDeleteMultiHeadUserOptions)
+
+	for i, model := range models {
+		if i == 0 {
+			q.AppendSQL("(")
+		} else {
+			q.AppendSQL(",(")
+		}
+		q.AppendSQL("$")
+		q.AppendPlaceholderNum()
+		q.AppendArgs(model.data.UserID)
+		q.AppendSQL(", $")
+		q.AppendPlaceholderNum()
+		q.AppendArgs(model.data.OptionID)
+		q.AppendSQL(")")
+	}
+
+	q.AppendSQL(")")
+	return q
+}
+
+func (dao UserOptionsDAO) DeleteMulti(ctx context.Context, records []UserOptionsRecord) error {
+	if len(records) == 0 {
+		return nil
+	}
+
+	ctx = advpgconn.QueryInfoCtx(ctx, "user_options", "")
+	q := queryDeleteMultiUserOptions(records)
+	_, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
+	return err
+}
 
 //// UserViews ////
 
@@ -1593,6 +1827,9 @@ const (
 	sqlInsertUserViews          = sqlInsertHeadUserViews + `($1, $2)` + sqlInsertTailUserViews
 	sqlUpdateReturningUserViews = ` RETURNING views`
 	sqlSelectMutatorsUserViews  = `SELECT views FROM user_views WHERE user_id=$1`
+
+	sqlDeleteUserViews          = `DELETE FROM user_views WHERE user_id=$1`
+	sqlDeleteMultiHeadUserViews = `DELETE FROM user_views WHERE user_id IN (`
 )
 
 type UserViewsRecord struct {
@@ -1756,5 +1993,58 @@ func (dao UserViewsDAO) Update(ctx context.Context, data *UserViewsRecord) error
 		data.reset()
 	}
 
+	return err
+}
+func (model *UserViewsRecord) queryDelete() *advpg.SimpleQuery {
+	return advpg.NewSimpleQuery(
+		sqlDeleteUserViews,
+		[]any{model.data.UserID},
+		nil,
+	)
+}
+
+func (dao UserViewsDAO) Delete(ctx context.Context, data *UserViewsRecord) error {
+	ctx = advpgconn.QueryInfoCtx(ctx, "user_views", "")
+	q := data.queryDelete()
+	ct, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
+	if err != nil {
+		return err
+	}
+
+	if ct.RowsAffected() == 0 {
+		return sql.ErrNoRows
+	}
+
+	return nil
+}
+
+func queryDeleteMultiUserViews(models []UserViewsRecord) *advpg.QueryBuilder {
+	if len(models) == 0 {
+		return &advpg.QueryBuilder{}
+	}
+
+	q := advpg.NewQueryBuilder(sqlDeleteMultiHeadUserViews)
+
+	for i, model := range models {
+		if i > 0 {
+			q.AppendSQL(",")
+		}
+		q.AppendSQL("$")
+		q.AppendPlaceholderNum()
+		q.AppendArgs(model.data.UserID)
+	}
+
+	q.AppendSQL(")")
+	return q
+}
+
+func (dao UserViewsDAO) DeleteMulti(ctx context.Context, records []UserViewsRecord) error {
+	if len(records) == 0 {
+		return nil
+	}
+
+	ctx = advpgconn.QueryInfoCtx(ctx, "user_views", "")
+	q := queryDeleteMultiUserViews(records)
+	_, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
 	return err
 }

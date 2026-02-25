@@ -459,8 +459,8 @@ func TestParse(t *testing.T) {
 		}}),
 		must: []string{"sqlSelect"},
 		mustNot: []string{
-			"querySelect",
-			"queryDelete",
+			"querySelectBy",
+			"queryDeleteBy",
 			"querySelectMutators",
 		},
 	}, {

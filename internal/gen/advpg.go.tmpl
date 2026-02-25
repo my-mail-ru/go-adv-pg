@@ -171,6 +171,21 @@ const (
 			{{ template "sql_result" $col }}=${{inc $i}}
 		{{- end -}}`
 	{{ end -}}
+	{{- if $model.PrimaryKeyIndex }}
+		sqlDelete{{$model.GoName}} = `DELETE FROM {{$model.Table.Table}} WHERE
+			{{- range $i, $col := $model.PrimaryKeyColumns }} {{ if $i }}AND {{ end -}}
+				{{$col.ColumnName}}=${{inc $i}}
+			{{- end -}}`
+		sqlDeleteMultiHead{{$model.GoName}} = `DELETE FROM {{$model.Table.Table}} WHERE
+			{{- if eq (len $model.PrimaryKeyColumns) 1 -}}
+				{{- range $col := $model.PrimaryKeyColumns }} {{$col.ColumnName}} IN ({{ end -}}
+			{{- else }} (
+				{{- range $i, $col := $model.PrimaryKeyColumns -}}
+					{{- if $i }}, {{ end -}}
+					{{$col.ColumnName}}
+				{{- end -}}) IN (
+			{{- end -}}`
+	{{ end -}}
 )
 
 {{- if $model.IsImplicit }}
@@ -786,6 +801,83 @@ func (dao {{$model.DAO}}) Insert(ctx context.Context, data *{{$model.RecordType}
 			data.reset()
 		}
 
+		return err
+	}
+{{ end -}}
+
+{{ if $model.PrimaryKeyIndex -}}
+	func (model *{{$model.RecordType}}) queryDelete() *{{$.AdvPgPkg}}.SimpleQuery {
+		return {{$.AdvPgPkg}}.NewSimpleQuery(
+			sqlDelete{{$model.GoName}},
+			[]any{
+				{{- range $i, $col := $model.PrimaryKeyColumns -}}
+					{{ if $i }}, {{ end -}}
+					{{$col.GoExpr}}
+				{{- end -}}
+			},
+			nil,
+		)
+	}
+
+	func (dao {{$model.DAO}}) Delete(ctx context.Context, data *{{$model.RecordType}}) error {
+		ctx = {{$.AdvPgConnPkg}}.QueryInfoCtx(ctx, {{quote $model.Table.Table}}, "")
+		q := data.queryDelete()
+		ct, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
+		if err != nil {
+			return err
+		}
+
+		if ct.RowsAffected() == 0 {
+			return sql.ErrNoRows
+		}
+
+		return nil
+	}
+
+	func queryDeleteMulti{{$model.GoName}}(models []{{$model.RecordType}}) *{{$.AdvPgPkg}}.QueryBuilder {
+		if len(models) == 0 {
+			return &{{$.AdvPgPkg}}.QueryBuilder{}
+		}
+
+		q := {{$.AdvPgPkg}}.NewQueryBuilder(sqlDeleteMultiHead{{$model.GoName}})
+
+		for i, model := range models {
+			{{- if eq (len $model.PrimaryKeyColumns) 1 }}
+				if i > 0 {
+					q.AppendSQL(",")
+				}
+				{{- range $col := $model.PrimaryKeyColumns }}
+					q.AppendSQL("$")
+					q.AppendPlaceholderNum()
+					q.AppendArgs({{$col.GoExpr}})
+				{{- end }}
+			{{- else }}
+				if i == 0 {
+					q.AppendSQL("(")
+				} else {
+					q.AppendSQL(",(")
+				}
+				{{- range $i, $col := $model.PrimaryKeyColumns }}
+					q.AppendSQL("{{ if $i }}, {{ end }}$")
+					q.AppendPlaceholderNum()
+					q.AppendArgs({{$col.GoExpr}})
+				{{- end }}
+				q.AppendSQL(")")
+			{{- end }}
+		}
+
+		q.AppendSQL(")")
+		return q
+	}
+
+	func (dao {{$model.DAO}}) DeleteMulti(ctx context.Context, records []{{$model.RecordType}}) error {
+		if len(records) == 0 {
+			return nil
+		}
+
+		ctx = {{$.AdvPgConnPkg}}.QueryInfoCtx(ctx, {{quote $model.Table.Table}}, "")
+		q := queryDeleteMulti{{$model.GoName}}(records)
+		_, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
 		return err
 	}
 {{ end -}}

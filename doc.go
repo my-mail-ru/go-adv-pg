@@ -174,9 +174,26 @@ Having the configuration:
 
 # Delete
 
-The only difference between Select and Delete method configuration is the names of the Index
-properties (Deleter and DisableDeleter).
-Only the error value is returned by the Deleter.
+The delete operation is represented by index-based and record-based methods.
+
+Index-based Delete methods are generated for each [Index] declared for a table, unless the
+[Index].DisableDeleter is set to true. Their configuration follows the same rules as Select
+methods (see above), with Index properties Deleter and DisableDeleter instead of Selector
+and DisableSelector. Only the error value is returned by these methods.
+
+Record-based Delete methods are always generated when a primary key [Index] is defined,
+regardless of DisableDeleter:
+
+  - Delete. Takes a pointer to the Record (or to ${Model} directly if [ActiveRecord] is disabled)
+    and deletes the corresponding row by extracting primary key values from the record.
+    Returns [sql.ErrNoRows] if no matching row is found.
+
+  - DeleteMulti. Takes a slice of Records and deletes all matching rows in a single query.
+    For single-column primary keys, uses `DELETE ... WHERE pk IN (...)`.
+    For composite primary keys, uses `DELETE ... WHERE (pk1, pk2) IN ((...), ...)`.
+    Returns nil for an empty slice. Unlike the single-record Delete, does not return
+    an error when some records are not found; existing and non-existing records
+    can be freely mixed in the input slice.
 
 # Insert
 
