@@ -1007,10 +1007,12 @@ func (model *UserRecord) querySelectMultiByIDType(keys []SelectMultiByIDTypeKey,
 
 	q.AppendSQL(`) ORDER BY created_at DESC`)
 	if limit > 0 {
-		q.AppendSQL(" LIMIT " + strconv.FormatUint(uint64(limit), 10))
+		q.AppendSQL(" LIMIT ")
+		q.AppendSQL(strconv.FormatUint(uint64(limit), 10))
 	}
 	if offset > 0 {
-		q.AppendSQL(" OFFSET " + strconv.FormatUint(uint64(offset), 10))
+		q.AppendSQL(" OFFSET ")
+		q.AppendSQL(strconv.FormatUint(uint64(offset), 10))
 	}
 	q.SetResults([]any{&model.data.ID, &model.data.Name, &model.data.Type, &model.data.PostCount, &model.data.CreatedAt, &model.data.UpdatedAt})
 

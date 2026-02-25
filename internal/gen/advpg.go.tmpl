@@ -292,10 +292,12 @@ func (*{{$model.RecordType}}) Table() string {
 				`)
 				{{ if $method.NeedResults -}}
 				if limit > 0 {
-					q.AppendSQL(" LIMIT " + strconv.FormatUint(uint64(limit), 10))
+					q.AppendSQL(" LIMIT ")
+					q.AppendSQL(strconv.FormatUint(uint64(limit), 10))
 				}
 				if offset > 0 {
-					q.AppendSQL(" OFFSET " + strconv.FormatUint(uint64(offset), 10))
+					q.AppendSQL(" OFFSET ")
+					q.AppendSQL(strconv.FormatUint(uint64(offset), 10))
 				}
 				q.SetResults({{ template "results_literal" $model.Columns }})
 				{{- end }}
