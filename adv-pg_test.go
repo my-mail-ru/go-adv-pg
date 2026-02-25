@@ -11,6 +11,12 @@ func TestSelectOptions(t *testing.T) {
 		if opt.Offset() != 0 {
 			t.Errorf("Offset: got %d, want 0", opt.Offset())
 		}
+		if opt.UseReplica() {
+			t.Error("UseReplica: got true, want false")
+		}
+		if opt.UseMaster() {
+			t.Error("UseMaster: got true, want false")
+		}
 	})
 
 	t.Run("WithLimit", func(t *testing.T) {
@@ -34,6 +40,26 @@ func TestSelectOptions(t *testing.T) {
 		}
 		if opt.Offset() != 20 {
 			t.Errorf("Offset: got %d, want 20", opt.Offset())
+		}
+	})
+
+	t.Run("WithReplica true", func(t *testing.T) {
+		opt := NewSelectOptions(WithReplica(true))
+		if !opt.UseReplica() {
+			t.Error("UseReplica: got false, want true")
+		}
+		if opt.UseMaster() {
+			t.Error("UseMaster: got true, want false")
+		}
+	})
+
+	t.Run("WithReplica false", func(t *testing.T) {
+		opt := NewSelectOptions(WithReplica(false))
+		if opt.UseReplica() {
+			t.Error("UseReplica: got true, want false")
+		}
+		if !opt.UseMaster() {
+			t.Error("UseMaster: got false, want true")
 		}
 	})
 }
