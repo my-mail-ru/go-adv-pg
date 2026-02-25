@@ -437,17 +437,17 @@ func (qb *QueryBuilder) Results() []any {
 
 // SelectOptions are intended to be used from unit tests and/or generated code. Do not use it directly.
 type SelectOptions struct {
-	limit      int
-	offset     int
+	limit      uint
+	offset     uint
 	useReplica bool
 	useMaster  bool
 }
 
-func (so *SelectOptions) Limit() int {
+func (so *SelectOptions) Limit() uint {
 	return so.limit
 }
 
-func (so *SelectOptions) Offset() int {
+func (so *SelectOptions) Offset() uint {
 	return so.offset
 }
 
@@ -463,14 +463,14 @@ func (so *SelectOptions) UseMaster() bool {
 type SelectOptionFunc func(*SelectOptions)
 
 // WithLimit overrides the DefaultLimit specified for an [Index].
-func WithLimit(limit int) SelectOptionFunc {
+func WithLimit(limit uint) SelectOptionFunc {
 	return func(so *SelectOptions) {
 		so.limit = limit
 	}
 }
 
 // WithOffset specifies an offset for Select queries.
-func WithOffset(offset int) SelectOptionFunc {
+func WithOffset(offset uint) SelectOptionFunc {
 	return func(so *SelectOptions) {
 		so.offset = offset
 	}

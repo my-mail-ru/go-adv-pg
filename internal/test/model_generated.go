@@ -9,6 +9,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -117,9 +118,16 @@ func NewExtLinkDAO(db advpg.DB) ExtLinkDAO {
 	return ExtLinkDAO{db: db}
 }
 
-func (model *ExtLinkRecord) querySelectByPrimaryKey(inUserID int, inExternalID int) *advpg.SimpleQuery {
+func (model *ExtLinkRecord) querySelectByPrimaryKey(inUserID int, inExternalID int, limit, offset uint) *advpg.SimpleQuery {
+	sql := sqlSelectExtLink + ` WHERE user_id=$1 AND ext_id=$2`
+	if limit > 0 {
+		sql += " LIMIT " + strconv.FormatUint(uint64(limit), 10)
+	}
+	if offset > 0 {
+		sql += " OFFSET " + strconv.FormatUint(uint64(offset), 10)
+	}
 	return advpg.NewSimpleQuery(
-		sqlSelectExtLink+` WHERE user_id=$1 AND ext_id=$2`,
+		sql,
 		[]any{inUserID, inExternalID},
 		[]any{&model.data.UserID, &model.data.ExternalID, &model.data.CreatedAt, &model.data.Status, &model.data.LinkCount, &model.data.ModifiedAt, &model.data.RefreshedAt},
 	)
@@ -135,9 +143,10 @@ func (model *ExtLinkRecord) queryDeleteByPrimaryKey(inUserID int, inExternalID i
 
 func (dao ExtLinkDAO) SelectByPrimaryKey(ctx context.Context, inUserID int, inExternalID int, optFuncs ...advpg.SelectOptionFunc) (ExtLinkRecord, error) {
 	var data ExtLinkRecord
-	q := data.querySelectByPrimaryKey(inUserID, inExternalID)
 	ctx = advpgconn.QueryInfoCtx(ctx, "ext_links", "PrimaryKey")
 	opt := advpg.NewSelectOptions(optFuncs...)
+	limit := opt.Limit()
+	q := data.querySelectByPrimaryKey(inUserID, inExternalID, limit, opt.Offset())
 	db := advpgconn.ReplicaByOpt(dao.db, opt, "ext_links")
 	row := db.QueryRow(ctx, q.SQL(), q.Args()...)
 	err := row.Scan(q.Results()...)
@@ -160,9 +169,16 @@ func (dao ExtLinkDAO) DeleteByPrimaryKey(ctx context.Context, inUserID int, inEx
 	return nil
 }
 
-func (model *ExtLinkRecord) querySelectMultiByStatus(inStatuses []int) *advpg.SimpleQuery {
+func (model *ExtLinkRecord) querySelectMultiByStatus(inStatuses []int, limit, offset uint) *advpg.SimpleQuery {
+	sql := sqlSelectExtLink + ` WHERE status=IN($1)`
+	if limit > 0 {
+		sql += " LIMIT " + strconv.FormatUint(uint64(limit), 10)
+	}
+	if offset > 0 {
+		sql += " OFFSET " + strconv.FormatUint(uint64(offset), 10)
+	}
 	return advpg.NewSimpleQuery(
-		sqlSelectExtLink+` WHERE status=IN($1)`,
+		sql,
 		[]any{inStatuses},
 		[]any{&model.data.UserID, &model.data.ExternalID, &model.data.CreatedAt, &model.data.Status, &model.data.LinkCount, &model.data.ModifiedAt, &model.data.RefreshedAt},
 	)
@@ -178,9 +194,10 @@ func (model *ExtLinkRecord) queryDeleteMultiByStatus(inStatuses []int) *advpg.Si
 
 func (dao ExtLinkDAO) SelectMultiByStatus(ctx context.Context, inStatuses []int, optFuncs ...advpg.SelectOptionFunc) ([]ExtLinkRecord, error) {
 	var data ExtLinkRecord
-	q := data.querySelectMultiByStatus(inStatuses)
 	ctx = advpgconn.QueryInfoCtx(ctx, "ext_links", "Status")
 	opt := advpg.NewSelectOptions(optFuncs...)
+	limit := opt.Limit()
+	q := data.querySelectMultiByStatus(inStatuses, limit, opt.Offset())
 	db := advpgconn.ReplicaByOpt(dao.db, opt, "ext_links")
 
 	rows, err := db.Query(ctx, q.SQL(), q.Args()...)
@@ -527,9 +544,16 @@ func NewSeenDAO(db advpg.DB) SeenDAO {
 	return SeenDAO{db: db}
 }
 
-func (model *SeenRecord) querySelectByUserID(inUserID int) *advpg.SimpleQuery {
+func (model *SeenRecord) querySelectByUserID(inUserID int, limit, offset uint) *advpg.SimpleQuery {
+	sql := sqlSelectSeen + ` WHERE user_id=$1`
+	if limit > 0 {
+		sql += " LIMIT " + strconv.FormatUint(uint64(limit), 10)
+	}
+	if offset > 0 {
+		sql += " OFFSET " + strconv.FormatUint(uint64(offset), 10)
+	}
 	return advpg.NewSimpleQuery(
-		sqlSelectSeen+` WHERE user_id=$1`,
+		sql,
 		[]any{inUserID},
 		[]any{&model.data.UserID, &model.data.SeenAt},
 	)
@@ -545,9 +569,10 @@ func (model *SeenRecord) queryDeleteByUserID(inUserID int) *advpg.SimpleQuery {
 
 func (dao SeenDAO) SelectByUserID(ctx context.Context, inUserID int, optFuncs ...advpg.SelectOptionFunc) (SeenRecord, error) {
 	var data SeenRecord
-	q := data.querySelectByUserID(inUserID)
 	ctx = advpgconn.QueryInfoCtx(ctx, "seen", "UserID")
 	opt := advpg.NewSelectOptions(optFuncs...)
+	limit := opt.Limit()
+	q := data.querySelectByUserID(inUserID, limit, opt.Offset())
 	db := advpgconn.ReplicaByOpt(dao.db, opt, "seen")
 	row := db.QueryRow(ctx, q.SQL(), q.Args()...)
 	err := row.Scan(q.Results()...)
@@ -901,9 +926,16 @@ func NewUserDAO(db advpg.DB) UserDAO {
 	return UserDAO{db: db}
 }
 
-func (model *UserRecord) querySelectByID(inID int) *advpg.SimpleQuery {
+func (model *UserRecord) querySelectByID(inID int, limit, offset uint) *advpg.SimpleQuery {
+	sql := sqlSelectUser + ` WHERE id=$1`
+	if limit > 0 {
+		sql += " LIMIT " + strconv.FormatUint(uint64(limit), 10)
+	}
+	if offset > 0 {
+		sql += " OFFSET " + strconv.FormatUint(uint64(offset), 10)
+	}
 	return advpg.NewSimpleQuery(
-		sqlSelectUser+` WHERE id=$1`,
+		sql,
 		[]any{inID},
 		[]any{&model.data.ID, &model.data.Name, &model.data.Type, &model.data.PostCount, &model.data.CreatedAt, &model.data.UpdatedAt},
 	)
@@ -919,9 +951,10 @@ func (model *UserRecord) queryDeleteByID(inID int) *advpg.SimpleQuery {
 
 func (dao UserDAO) SelectByID(ctx context.Context, inID int, optFuncs ...advpg.SelectOptionFunc) (UserRecord, error) {
 	var data UserRecord
-	q := data.querySelectByID(inID)
 	ctx = advpgconn.QueryInfoCtx(ctx, "users", "ID")
 	opt := advpg.NewSelectOptions(optFuncs...)
+	limit := opt.Limit()
+	q := data.querySelectByID(inID, limit, opt.Offset())
 	db := advpgconn.ReplicaByOpt(dao.db, opt, "users")
 	row := db.QueryRow(ctx, q.SQL(), q.Args()...)
 	err := row.Scan(q.Results()...)
@@ -949,7 +982,7 @@ type SelectMultiByIDTypeKey struct {
 	Type int
 }
 
-func (model *UserRecord) querySelectMultiByIDType(keys []SelectMultiByIDTypeKey) *advpg.QueryBuilder {
+func (model *UserRecord) querySelectMultiByIDType(keys []SelectMultiByIDTypeKey, limit, offset uint) *advpg.QueryBuilder {
 	if len(keys) == 0 {
 		return &advpg.QueryBuilder{}
 
@@ -973,6 +1006,12 @@ func (model *UserRecord) querySelectMultiByIDType(keys []SelectMultiByIDTypeKey)
 	}
 
 	q.AppendSQL(`) ORDER BY created_at DESC`)
+	if limit > 0 {
+		q.AppendSQL(" LIMIT " + strconv.FormatUint(uint64(limit), 10))
+	}
+	if offset > 0 {
+		q.AppendSQL(" OFFSET " + strconv.FormatUint(uint64(offset), 10))
+	}
 	q.SetResults([]any{&model.data.ID, &model.data.Name, &model.data.Type, &model.data.PostCount, &model.data.CreatedAt, &model.data.UpdatedAt})
 
 	return q
@@ -1008,9 +1047,10 @@ func (model *UserRecord) queryDeleteMultiByIDType(keys []SelectMultiByIDTypeKey)
 
 func (dao UserDAO) SelectMultiByIDType(ctx context.Context, keys []SelectMultiByIDTypeKey, optFuncs ...advpg.SelectOptionFunc) ([]UserRecord, error) {
 	var data UserRecord
-	q := data.querySelectMultiByIDType(keys)
 	ctx = advpgconn.QueryInfoCtx(ctx, "users", "IDType")
 	opt := advpg.NewSelectOptions(optFuncs...)
+	limit := opt.Limit()
+	q := data.querySelectMultiByIDType(keys, limit, opt.Offset())
 	db := advpgconn.ReplicaByOpt(dao.db, opt, "users")
 
 	rows, err := db.Query(ctx, q.SQL(), q.Args()...)
@@ -1044,9 +1084,16 @@ func (dao UserDAO) DeleteMultiByIDType(ctx context.Context, keys []SelectMultiBy
 	return err
 }
 
-func (model *UserRecord) querySelectByName(inName string) *advpg.SimpleQuery {
+func (model *UserRecord) querySelectByName(inName string, limit, offset uint) *advpg.SimpleQuery {
+	sql := sqlSelectUser + ` WHERE name=$1`
+	if limit > 0 {
+		sql += " LIMIT " + strconv.FormatUint(uint64(limit), 10)
+	}
+	if offset > 0 {
+		sql += " OFFSET " + strconv.FormatUint(uint64(offset), 10)
+	}
 	return advpg.NewSimpleQuery(
-		sqlSelectUser+` WHERE name=$1`,
+		sql,
 		[]any{inName},
 		[]any{&model.data.ID, &model.data.Name, &model.data.Type, &model.data.PostCount, &model.data.CreatedAt, &model.data.UpdatedAt},
 	)
@@ -1062,9 +1109,10 @@ func (model *UserRecord) queryDeleteByName(inName string) *advpg.SimpleQuery {
 
 func (dao UserDAO) SelectByName(ctx context.Context, inName string, optFuncs ...advpg.SelectOptionFunc) ([]UserRecord, error) {
 	var data UserRecord
-	q := data.querySelectByName(inName)
 	ctx = advpgconn.QueryInfoCtx(ctx, "users", "Name")
 	opt := advpg.NewSelectOptions(optFuncs...)
+	limit := opt.Limit()
+	q := data.querySelectByName(inName, limit, opt.Offset())
 	db := advpgconn.ReplicaByOpt(dao.db, opt, "users")
 
 	rows, err := db.Query(ctx, q.SQL(), q.Args()...)
@@ -1479,9 +1527,16 @@ func NewUserOptionsDAO(db advpg.DB) UserOptionsDAO {
 	return UserOptionsDAO{db: db}
 }
 
-func (model *UserOptionsRecord) querySelectByPrimaryKey(inUserID int, inOptionID int) *advpg.SimpleQuery {
+func (model *UserOptionsRecord) querySelectByPrimaryKey(inUserID int, inOptionID int, limit, offset uint) *advpg.SimpleQuery {
+	sql := sqlSelectUserOptions + ` WHERE user_id=$1 AND option_id=$2`
+	if limit > 0 {
+		sql += " LIMIT " + strconv.FormatUint(uint64(limit), 10)
+	}
+	if offset > 0 {
+		sql += " OFFSET " + strconv.FormatUint(uint64(offset), 10)
+	}
 	return advpg.NewSimpleQuery(
-		sqlSelectUserOptions+` WHERE user_id=$1 AND option_id=$2`,
+		sql,
 		[]any{inUserID, inOptionID},
 		[]any{&model.data.UserID, &model.data.OptionID, &model.data.Flag, &model.data.Option},
 	)
@@ -1497,9 +1552,10 @@ func (model *UserOptionsRecord) queryDeleteByPrimaryKey(inUserID int, inOptionID
 
 func (dao UserOptionsDAO) SelectByPrimaryKey(ctx context.Context, inUserID int, inOptionID int, optFuncs ...advpg.SelectOptionFunc) (UserOptionsRecord, error) {
 	var data UserOptionsRecord
-	q := data.querySelectByPrimaryKey(inUserID, inOptionID)
 	ctx = advpgconn.QueryInfoCtx(ctx, "user_options", "PrimaryKey")
 	opt := advpg.NewSelectOptions(optFuncs...)
+	limit := opt.Limit()
+	q := data.querySelectByPrimaryKey(inUserID, inOptionID, limit, opt.Offset())
 	db := advpgconn.ReplicaByOpt(dao.db, opt, "user_options")
 	row := db.QueryRow(ctx, q.SQL(), q.Args()...)
 	err := row.Scan(q.Results()...)
@@ -1522,9 +1578,16 @@ func (dao UserOptionsDAO) DeleteByPrimaryKey(ctx context.Context, inUserID int, 
 	return nil
 }
 
-func (model *UserOptionsRecord) querySelectByUserID(inUserID int) *advpg.SimpleQuery {
+func (model *UserOptionsRecord) querySelectByUserID(inUserID int, limit, offset uint) *advpg.SimpleQuery {
+	sql := sqlSelectUserOptions + ` WHERE user_id=$1 ORDER BY option_id`
+	if limit > 0 {
+		sql += " LIMIT " + strconv.FormatUint(uint64(limit), 10)
+	}
+	if offset > 0 {
+		sql += " OFFSET " + strconv.FormatUint(uint64(offset), 10)
+	}
 	return advpg.NewSimpleQuery(
-		sqlSelectUserOptions+` WHERE user_id=$1 ORDER BY option_id`,
+		sql,
 		[]any{inUserID},
 		[]any{&model.data.UserID, &model.data.OptionID, &model.data.Flag, &model.data.Option},
 	)
@@ -1540,9 +1603,13 @@ func (model *UserOptionsRecord) queryDeleteByUserID(inUserID int) *advpg.SimpleQ
 
 func (dao UserOptionsDAO) SelectByUserID(ctx context.Context, inUserID int, optFuncs ...advpg.SelectOptionFunc) ([]UserOptionsRecord, error) {
 	var data UserOptionsRecord
-	q := data.querySelectByUserID(inUserID)
 	ctx = advpgconn.QueryInfoCtx(ctx, "user_options", "UserID")
 	opt := advpg.NewSelectOptions(optFuncs...)
+	limit := opt.Limit()
+	if limit == 0 {
+		limit = 50
+	}
+	q := data.querySelectByUserID(inUserID, limit, opt.Offset())
 	db := advpgconn.ReplicaByOpt(dao.db, opt, "user_options")
 
 	rows, err := db.Query(ctx, q.SQL(), q.Args()...)
@@ -1913,9 +1980,16 @@ func NewUserViewsDAO(db advpg.DB) UserViewsDAO {
 	return UserViewsDAO{db: db}
 }
 
-func (model *UserViewsRecord) querySelectByUserID(inUserID int) *advpg.SimpleQuery {
+func (model *UserViewsRecord) querySelectByUserID(inUserID int, limit, offset uint) *advpg.SimpleQuery {
+	sql := sqlSelectUserViews + ` WHERE user_id=$1`
+	if limit > 0 {
+		sql += " LIMIT " + strconv.FormatUint(uint64(limit), 10)
+	}
+	if offset > 0 {
+		sql += " OFFSET " + strconv.FormatUint(uint64(offset), 10)
+	}
 	return advpg.NewSimpleQuery(
-		sqlSelectUserViews+` WHERE user_id=$1`,
+		sql,
 		[]any{inUserID},
 		[]any{&model.data.UserID, &model.data.Views},
 	)
@@ -1931,9 +2005,10 @@ func (model *UserViewsRecord) queryDeleteByUserID(inUserID int) *advpg.SimpleQue
 
 func (dao UserViewsDAO) SelectByUserID(ctx context.Context, inUserID int, optFuncs ...advpg.SelectOptionFunc) (UserViewsRecord, error) {
 	var data UserViewsRecord
-	q := data.querySelectByUserID(inUserID)
 	ctx = advpgconn.QueryInfoCtx(ctx, "user_views", "UserID")
 	opt := advpg.NewSelectOptions(optFuncs...)
+	limit := opt.Limit()
+	q := data.querySelectByUserID(inUserID, limit, opt.Offset())
 	db := advpgconn.ReplicaByOpt(dao.db, opt, "user_views")
 	row := db.QueryRow(ctx, q.SQL(), q.Args()...)
 	err := row.Scan(q.Results()...)

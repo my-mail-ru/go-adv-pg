@@ -350,7 +350,7 @@ func TestParse(t *testing.T) {
 		}}),
 		must: []string{
 			"//foo:bar test",
-			"querySelectNoActiveRecordByPK(inID int)",
+			"querySelectNoActiveRecordByPK(inID int, limit, offset uint)",
 			"queryDeleteNoActiveRecordByPK(inID int)",
 			"queryInsert()",
 			"queryFullUpdate()",
@@ -379,7 +379,7 @@ func TestParse(t *testing.T) {
 			},
 		}}),
 		must: []string{
-			"querySelectNoPrimaryKeyByID(inID int)",
+			"querySelectNoPrimaryKeyByID(inID int, limit, offset uint)",
 			"queryInsert()",
 			"type SelectMultiNoPrimaryKeyByIDTypeKey",
 		},
@@ -410,7 +410,7 @@ func TestParse(t *testing.T) {
 			},
 		}}),
 		must: []string{
-			"querySelectPrimaryKeyOnlyByPrimaryKey(inID int, inType int)",
+			"querySelectPrimaryKeyOnlyByPrimaryKey(inID int, inType int, limit, offset uint)",
 			"queryInsert()",
 			"queryDeletePrimaryKeyOnlyByPrimaryKey(inID int, inType int)",
 			"type DeleteMultiByIDTypeKey",
@@ -531,8 +531,8 @@ func TestParse(t *testing.T) {
 			},
 		}}, true),
 		must: []string{
-			"querySelectByID(inID int)",
-			"querySelectMultiByID(inIDS []int)",
+			"querySelectByID(inID int, limit, offset uint)",
+			"querySelectMultiByID(inIDS []int, limit, offset uint)",
 			"queryDeleteByID(inID int)",
 			"queryInsert()",
 			"queryFullUpdate()",

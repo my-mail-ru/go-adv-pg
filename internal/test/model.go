@@ -166,7 +166,8 @@ var _ = advpg.Table{
 		Keys:         []string{"user_id", "option_id"},
 		IsPrimaryKey: true,
 	}, {
-		Keys: []string{"user_id"},
+		Keys:         []string{"user_id"},
+		DefaultLimit: 50,
 		Order: []advpg.Order{{
 			Field: "option_id",
 			Order: advpg.OrderAsc,

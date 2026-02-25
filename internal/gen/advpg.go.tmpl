@@ -259,7 +259,7 @@ func (*{{$model.RecordType}}) Table() string {
 		}
 
 		{{- range $method := $model.IterateQueryMethods $idx }}
-			func (model *{{$model.RecordType}}) {{$method.Name}}(keys []{{$idx.KeyStructName}}) *{{$.AdvPgPkg}}.QueryBuilder {
+			func (model *{{$model.RecordType}}) {{$method.Name}}(keys []{{$idx.KeyStructName}}{{- if $method.NeedResults }}, limit, offset uint{{ end }}) *{{$.AdvPgPkg}}.QueryBuilder {
 				if len(keys) == 0 {
 					return &{{$.AdvPgPkg}}.QueryBuilder{}
 
@@ -291,6 +291,12 @@ func (*{{$model.RecordType}}) Table() string {
 					{{- if $method.NeedResults }}{{ template "order_by" $model.IterateIndexOrder $idx }}{{ end -}}
 				`)
 				{{ if $method.NeedResults -}}
+				if limit > 0 {
+					q.AppendSQL(" LIMIT " + strconv.FormatUint(uint64(limit), 10))
+				}
+				if offset > 0 {
+					q.AppendSQL(" OFFSET " + strconv.FormatUint(uint64(offset), 10))
+				}
 				q.SetResults({{ template "results_literal" $model.Columns }})
 				{{- end }}
 
@@ -302,9 +308,15 @@ func (*{{$model.RecordType}}) Table() string {
 		{{- if $idx.Selector -}}
 			func (dao {{$model.DAO}}) {{$idx.Selector}}(ctx context.Context, keys []{{$idx.KeyStructName}}, optFuncs ...{{$.AdvPgPkg}}.SelectOptionFunc) ([]{{$model.RecordType}}, error) {
 				var data {{$model.RecordType}}
-				q := data.query{{$idx.Selector}}(keys)
 				ctx = {{$.AdvPgConnPkg}}.QueryInfoCtx(ctx, {{quote $model.Table.Table}}, {{quote $idx.Name}})
 				opt := {{$.AdvPgPkg}}.NewSelectOptions(optFuncs...)
+				limit := opt.Limit()
+				{{- if $idx.DefaultLimit }}
+				if limit == 0 {
+					limit = {{$idx.DefaultLimit}}
+				}
+				{{- end }}
+				q := data.query{{$idx.Selector}}(keys, limit, opt.Offset())
 				db := {{$.AdvPgConnPkg}}.ReplicaByOpt(dao.db, opt, {{quote $model.Table.Table}})
 
 				rows, err := db.Query(ctx, q.SQL(), q.Args()...)
@@ -346,26 +358,47 @@ func (*{{$model.RecordType}}) Table() string {
 		{{- range $method := $model.IterateQueryMethods $idx }}
 			func (model *{{$model.RecordType}}) {{$method.Name }}(
 					{{- template "query_method_args" $model.IterateIndexKeys $idx -}}
+					{{- if $method.NeedResults }}, limit, offset uint{{ end -}}
 				) *{{$.AdvPgPkg}}.SimpleQuery {
-				return {{$.AdvPgPkg}}.NewSimpleQuery(
-					{{$method.Query}} WHERE
+				{{- if $method.NeedResults }}
+				sql := {{$method.Query}} WHERE
 						{{- range $i, $col := $model.IterateIndexKeys $idx }} {{ if $i }}AND {{ end -}}
 							{{ template "sql_result" $col }}={{ if $col.IsMulti }}IN({{ end }}${{inc $i}}{{ if $col.IsMulti }}){{ end }}
 						{{- end -}}
 						{{- if $idx.Condition }} AND {{$idx.Condition}}{{ end -}}
-						{{- if $method.NeedResults }}{{ template "order_by" $model.IterateIndexOrder $idx }}{{ end }}`,
+						{{ template "order_by" $model.IterateIndexOrder $idx }}`
+				if limit > 0 {
+					sql += " LIMIT " + strconv.FormatUint(uint64(limit), 10)
+				}
+				if offset > 0 {
+					sql += " OFFSET " + strconv.FormatUint(uint64(offset), 10)
+				}
+				return {{$.AdvPgPkg}}.NewSimpleQuery(
+					sql,
 					[]any{
 								{{- range $i, $col := $model.IterateIndexKeys $idx -}}
 									{{ if $i }}, {{ end -}}
 									in{{plural $col.IsMulti $col.GoName}}
 								{{- end -}}
 							},
-					{{- if $method.NeedResults }}
 						{{ template "results_literal" $model.Columns }},
-					{{- else }}
-						nil,
-					{{- end }}
 				)
+				{{- else }}
+				return {{$.AdvPgPkg}}.NewSimpleQuery(
+					{{$method.Query}} WHERE
+						{{- range $i, $col := $model.IterateIndexKeys $idx }} {{ if $i }}AND {{ end -}}
+							{{ template "sql_result" $col }}={{ if $col.IsMulti }}IN({{ end }}${{inc $i}}{{ if $col.IsMulti }}){{ end }}
+						{{- end -}}
+						{{- if $idx.Condition }} AND {{$idx.Condition}}{{ end }}`,
+					[]any{
+								{{- range $i, $col := $model.IterateIndexKeys $idx -}}
+									{{ if $i }}, {{ end -}}
+									in{{plural $col.IsMulti $col.GoName}}
+								{{- end -}}
+							},
+						nil,
+				)
+				{{- end }}
 			}
 
 		{{ end -}}
@@ -375,9 +408,15 @@ func (*{{$model.RecordType}}) Table() string {
 				{{- if not $idx.IsUniq -}} [] {{- end -}}
 			{{$model.RecordType}}, error) {
 				var data {{$model.RecordType}}
-				q := data.query{{$idx.Selector}}({{ template "query_method_keys" $model.IterateIndexKeys $idx }})
 				ctx = {{$.AdvPgConnPkg}}.QueryInfoCtx(ctx, {{quote $model.Table.Table}},  {{quote $idx.Name}})
 				opt := {{$.AdvPgPkg}}.NewSelectOptions(optFuncs...)
+				limit := opt.Limit()
+				{{- if $idx.DefaultLimit }}
+				if limit == 0 {
+					limit = {{$idx.DefaultLimit}}
+				}
+				{{- end }}
+				q := data.query{{$idx.Selector}}({{ template "query_method_keys" $model.IterateIndexKeys $idx }}, limit, opt.Offset())
 				db := {{$.AdvPgConnPkg}}.ReplicaByOpt(dao.db, opt, {{quote $model.Table.Table}})
 
 				{{- if $idx.IsUniq }}
