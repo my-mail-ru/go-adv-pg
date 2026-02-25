@@ -56,6 +56,13 @@ var advpgTmpl = template.Must(template.New("").Funcs(template.FuncMap{
 		// and is implemented only for perl ActiveRecord compatibility.
 		return strings.ReplaceAll(s, "%s", repl)
 	},
+	"sql_scan_qualified": func(format, qualifiedName, plainName string) string {
+		// like simple_printf, but replaces the first %s with qualifiedName (e.g. "table.col")
+		// and the rest with plainName (e.g. "col"). This is needed for the UpdateMulti RETURNING
+		// clause where the column reference must be table-qualified, but the alias must not be.
+		result := strings.Replace(format, "%s", qualifiedName, 1)
+		return strings.ReplaceAll(result, "%s", plainName)
+	},
 	"plural": func(enabled bool, s string) string {
 		if !enabled {
 			return s

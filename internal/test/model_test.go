@@ -95,11 +95,52 @@ func TestUpdateMulti(t *testing.T) {
 		if !strings.Contains(sql, "status=(t::ext_links).status") {
 			t.Error("missing SET status:", sql)
 		}
+		if !strings.Contains(sql, "modified_at=(t::ext_links).modified_at") {
+			t.Error("missing SET modified_at:", sql)
+		}
 		if !strings.Contains(sql, "link_count=ext_links.link_count+(t::ext_links).link_count") {
 			t.Error("missing mutator SET:", sql)
 		}
 		if !strings.Contains(sql, "RETURNING ext_links.link_count") {
-			t.Error("missing RETURNING:", sql)
+			t.Error("missing RETURNING link_count:", sql)
+		}
+		if !strings.Contains(sql, "EXTRACT(EPOCH FROM ext_links.refreshed_at::TIMESTAMP WITH TIME ZONE)::BIGINT AS refreshed_at") {
+			t.Error("missing RETURNING refreshed_at with SQLScan:", sql)
+		}
+	})
+}
+
+func TestSQLValueInUpdate(t *testing.T) {
+	t.Run("smart Update with SQLValue", func(t *testing.T) {
+		m := ExtLink{UserID: 1, ExternalID: 2, Status: 3}.Record()
+		m.SetModifiedAt(MyTime{})
+		q := m.queryUpdate()
+		sql := q.SQL()
+
+		if !strings.Contains(sql, "modified_at=TIMESTAMP WITH TIME ZONE 'epoch' + INTERVAL '1 sec' * $") {
+			t.Error("missing SQLValue in smart Update SET:", sql)
+		}
+		if !strings.Contains(sql, "RETURNING link_count") {
+			t.Error("missing RETURNING link_count:", sql)
+		}
+		if !strings.Contains(sql, "EXTRACT(EPOCH FROM refreshed_at::TIMESTAMP WITH TIME ZONE)::BIGINT AS refreshed_at") {
+			t.Error("missing RETURNING refreshed_at with SQLScan:", sql)
+		}
+	})
+
+	t.Run("FullUpdate with SQLValue", func(t *testing.T) {
+		m := ExtLink{UserID: 1, ExternalID: 2, Status: 3}.Record()
+		q := m.queryFullUpdate()
+		sql := q.SQL()
+
+		if !strings.Contains(sql, "modified_at=TIMESTAMP WITH TIME ZONE 'epoch' + INTERVAL '1 sec' * $2") {
+			t.Error("missing SQLValue in FullUpdate SET:", sql)
+		}
+		if !strings.Contains(sql, "RETURNING link_count") {
+			t.Error("missing RETURNING link_count:", sql)
+		}
+		if !strings.Contains(sql, "EXTRACT(EPOCH FROM refreshed_at::TIMESTAMP WITH TIME ZONE)::BIGINT AS refreshed_at") {
+			t.Error("missing RETURNING refreshed_at with SQLScan:", sql)
 		}
 	})
 }

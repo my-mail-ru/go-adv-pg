@@ -140,12 +140,7 @@ const (
 	{{- if $model.UpdateValueColumns }}{{ $valuesAlias := $model.UpdateMultiAlias }}
 		sqlUpdateMultiHead{{$model.GoName}} = `UPDATE {{$model.Table.Table}} SET
 			{{- range $i, $col := $model.UpdateValueColumns -}}
-				{{ if $i }},{{ end }} {{$col.ColumnName}}=
-				{{- if $col.SQLValue -}}
-					{{simple_printf $col.SQLValue (printf "(%s::%s).%s" $valuesAlias $model.Table.Table $col.ColumnName)}}
-				{{- else -}}
-					({{$valuesAlias}}::{{$model.Table.Table}}).{{$col.ColumnName}}
-				{{- end -}}
+				{{ if $i }},{{ end }} {{$col.ColumnName}}=({{$valuesAlias}}::{{$model.Table.Table}}).{{$col.ColumnName}}
 			{{- end -}}
 			{{- range $i, $col := $model.MutatorColumns -}}
 				{{ if or $i $model.UpdateValueColumns }},{{ end }} {{$col.ColumnName}}={{$model.Table.Table}}.{{$col.ColumnName}}+({{$valuesAlias}}::{{$model.Table.Table}}).{{$col.ColumnName}}
@@ -156,7 +151,7 @@ const (
 			{{- end -}}
 			{{- if $model.UpdateResultColumns }} RETURNING
 				{{- range $i, $col := $model.UpdateResultColumns }}{{ if $i }},{{ end }}
-					{{- if $col.SQLScan }} {{ simple_printf $col.SQLScan (print $model.Table.Table "." $col.ColumnName) -}}
+					{{- if $col.SQLScan }} {{ sql_scan_qualified $col.SQLScan (print $model.Table.Table "." $col.ColumnName) $col.ColumnName -}}
 					{{- else }} {{$model.Table.Table}}.{{$col.ColumnName}}
 					{{- end -}}
 				{{- end -}}
@@ -585,7 +580,11 @@ func (dao {{$model.DAO}}) Insert(ctx context.Context, data *{{$model.RecordType}
 					q.AppendPlaceholder()
 					q.AppendArgs(model.mut{{to_upper_camel $col.GoName}})
 				{{- else -}}
-					q.AppendPlaceholder()
+					{{ if $col.SQLValue -}}
+						q.AppendSQL(strings.ReplaceAll({{quote $col.SQLValue}}, "%s", q.Placeholder()))
+					{{ else -}}
+						q.AppendPlaceholder()
+					{{ end -}}
 					q.AppendArgs({{$col.GoExpr}})
 				{{- end }}
 			{{ end -}}
@@ -710,8 +709,13 @@ func (dao {{$model.DAO}}) Insert(ctx context.Context, data *{{$model.RecordType}
 					q.AppendSQL(",")
 				}
 
-				q.AppendSQL(" {{$col.ColumnName}}=$")
-				q.AppendPlaceholderNum()
+				{{ if $col.SQLValue -}}
+					q.AppendSQL(" {{$col.ColumnName}}=")
+					q.AppendSQL(strings.ReplaceAll({{quote $col.SQLValue}}, "%s", q.Placeholder()))
+				{{- else -}}
+					q.AppendSQL(" {{$col.ColumnName}}=$")
+					q.AppendPlaceholderNum()
+				{{- end }}
 				q.AppendArgs({{$col.GoExpr}})
 			}
 		{{ end }}
