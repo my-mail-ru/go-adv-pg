@@ -890,7 +890,9 @@ func TestDeleteUserDAO(t *testing.T) {
 		must(t, userDAO.InsertMulti(ctx, users))
 
 		// Mix existing and non-existing records; DeleteMulti must not error.
-		records := append(users, *(User{ID: -999}.Record()))
+		records := make([]UserRecord, len(users), len(users)+1)
+		copy(records, users)
+		records = append(records, *(User{ID: -999}.Record()))
 		must(t, userDAO.DeleteMulti(ctx, records))
 
 		for i, u := range users {

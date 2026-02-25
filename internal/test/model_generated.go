@@ -27,6 +27,9 @@ const (
 	sqlUpdateMultiHeadExtLink = `UPDATE ext_links SET status=(t::ext_links).status, link_count=ext_links.link_count+(t::ext_links).link_count FROM (VALUES `
 	sqlUpdateMultiTailExtLink = `) t WHERE ext_links.user_id=(t::ext_links).user_id AND ext_links.ext_id=(t::ext_links).ext_id RETURNING ext_links.link_count`
 	sqlSelectMutatorsExtLink  = `SELECT link_count FROM ext_links WHERE user_id=$1 AND ext_id=$2`
+
+	sqlDeleteExtLink          = `DELETE FROM ext_links WHERE user_id=$1 AND ext_id=$2`
+	sqlDeleteMultiHeadExtLink = `DELETE FROM ext_links WHERE (user_id, ext_id) IN (`
 )
 
 type ExtLinkRecord struct {
@@ -376,7 +379,7 @@ func (dao ExtLinkDAO) Update(ctx context.Context, data *ExtLinkRecord) error {
 }
 func (model *ExtLinkRecord) queryDelete() *advpg.SimpleQuery {
 	return advpg.NewSimpleQuery(
-		`DELETE FROM ext_links WHERE user_id=$1 AND ext_id=$2`,
+		sqlDeleteExtLink,
 		[]any{model.data.UserID, model.data.ExternalID},
 		nil,
 	)
@@ -402,7 +405,7 @@ func queryDeleteMultiExtLink(models []ExtLinkRecord) *advpg.QueryBuilder {
 		return &advpg.QueryBuilder{}
 	}
 
-	q := advpg.NewQueryBuilder(`DELETE FROM ext_links WHERE (user_id, ext_id) IN (`)
+	q := advpg.NewQueryBuilder(sqlDeleteMultiHeadExtLink)
 
 	for i, model := range models {
 		if i == 0 {
@@ -444,6 +447,8 @@ const (
 	sqlFullUpdateSeen      = `UPDATE seen SET seen_at=$1`
 	sqlUpdateMultiHeadSeen = `UPDATE seen SET seen_at=(t::seen).seen_at FROM (VALUES `
 	sqlUpdateMultiTailSeen = `) t WHERE seen.user_id=(t::seen).user_id`
+	sqlDeleteSeen          = `DELETE FROM seen WHERE user_id=$1`
+	sqlDeleteMultiHeadSeen = `DELETE FROM seen WHERE user_id IN (`
 )
 
 type Seen struct {
@@ -727,7 +732,7 @@ func (dao SeenDAO) Update(ctx context.Context, data *SeenRecord) error {
 }
 func (model *SeenRecord) queryDelete() *advpg.SimpleQuery {
 	return advpg.NewSimpleQuery(
-		`DELETE FROM seen WHERE user_id=$1`,
+		sqlDeleteSeen,
 		[]any{model.data.UserID},
 		nil,
 	)
@@ -753,7 +758,7 @@ func queryDeleteMultiSeen(models []SeenRecord) *advpg.QueryBuilder {
 		return &advpg.QueryBuilder{}
 	}
 
-	q := advpg.NewQueryBuilder(`DELETE FROM seen WHERE user_id IN (`)
+	q := advpg.NewQueryBuilder(sqlDeleteMultiHeadSeen)
 
 	for i, model := range models {
 		if i > 0 {
@@ -791,6 +796,9 @@ const (
 	sqlUpdateMultiHeadUser = `UPDATE users SET name=(t::users).name, type=(t::users).type, post_count=users.post_count+(t::users).post_count FROM (VALUES `
 	sqlUpdateMultiTailUser = `) t WHERE users.id=(t::users).id RETURNING users.post_count, users.updated_at`
 	sqlSelectMutatorsUser  = `SELECT post_count FROM users WHERE id=$1`
+
+	sqlDeleteUser          = `DELETE FROM users WHERE id=$1`
+	sqlDeleteMultiHeadUser = `DELETE FROM users WHERE id IN (`
 )
 
 type UserRecord struct {
@@ -1313,7 +1321,7 @@ func (dao UserDAO) Update(ctx context.Context, data *UserRecord) error {
 }
 func (model *UserRecord) queryDelete() *advpg.SimpleQuery {
 	return advpg.NewSimpleQuery(
-		`DELETE FROM users WHERE id=$1`,
+		sqlDeleteUser,
 		[]any{model.data.ID},
 		nil,
 	)
@@ -1339,7 +1347,7 @@ func queryDeleteMultiUser(models []UserRecord) *advpg.QueryBuilder {
 		return &advpg.QueryBuilder{}
 	}
 
-	q := advpg.NewQueryBuilder(`DELETE FROM users WHERE id IN (`)
+	q := advpg.NewQueryBuilder(sqlDeleteMultiHeadUser)
 
 	for i, model := range models {
 		if i > 0 {
@@ -1375,6 +1383,8 @@ const (
 	sqlFullUpdateUserOptions      = `UPDATE user_options SET flag=$1, option=$2`
 	sqlUpdateMultiHeadUserOptions = `UPDATE user_options SET flag=(t::user_options).flag, option=(t::user_options).option FROM (VALUES `
 	sqlUpdateMultiTailUserOptions = `) t WHERE user_options.user_id=(t::user_options).user_id AND user_options.option_id=(t::user_options).option_id`
+	sqlDeleteUserOptions          = `DELETE FROM user_options WHERE user_id=$1 AND option_id=$2`
+	sqlDeleteMultiHeadUserOptions = `DELETE FROM user_options WHERE (user_id, option_id) IN (`
 )
 
 type UserOptionsRecord struct {
@@ -1750,7 +1760,7 @@ func (dao UserOptionsDAO) Update(ctx context.Context, data *UserOptionsRecord) e
 }
 func (model *UserOptionsRecord) queryDelete() *advpg.SimpleQuery {
 	return advpg.NewSimpleQuery(
-		`DELETE FROM user_options WHERE user_id=$1 AND option_id=$2`,
+		sqlDeleteUserOptions,
 		[]any{model.data.UserID, model.data.OptionID},
 		nil,
 	)
@@ -1776,7 +1786,7 @@ func queryDeleteMultiUserOptions(models []UserOptionsRecord) *advpg.QueryBuilder
 		return &advpg.QueryBuilder{}
 	}
 
-	q := advpg.NewQueryBuilder(`DELETE FROM user_options WHERE (user_id, option_id) IN (`)
+	q := advpg.NewQueryBuilder(sqlDeleteMultiHeadUserOptions)
 
 	for i, model := range models {
 		if i == 0 {
@@ -1817,6 +1827,9 @@ const (
 	sqlInsertUserViews          = sqlInsertHeadUserViews + `($1, $2)` + sqlInsertTailUserViews
 	sqlUpdateReturningUserViews = ` RETURNING views`
 	sqlSelectMutatorsUserViews  = `SELECT views FROM user_views WHERE user_id=$1`
+
+	sqlDeleteUserViews          = `DELETE FROM user_views WHERE user_id=$1`
+	sqlDeleteMultiHeadUserViews = `DELETE FROM user_views WHERE user_id IN (`
 )
 
 type UserViewsRecord struct {
@@ -1984,7 +1997,7 @@ func (dao UserViewsDAO) Update(ctx context.Context, data *UserViewsRecord) error
 }
 func (model *UserViewsRecord) queryDelete() *advpg.SimpleQuery {
 	return advpg.NewSimpleQuery(
-		`DELETE FROM user_views WHERE user_id=$1`,
+		sqlDeleteUserViews,
 		[]any{model.data.UserID},
 		nil,
 	)
@@ -2010,7 +2023,7 @@ func queryDeleteMultiUserViews(models []UserViewsRecord) *advpg.QueryBuilder {
 		return &advpg.QueryBuilder{}
 	}
 
-	q := advpg.NewQueryBuilder(`DELETE FROM user_views WHERE user_id IN (`)
+	q := advpg.NewQueryBuilder(sqlDeleteMultiHeadUserViews)
 
 	for i, model := range models {
 		if i > 0 {

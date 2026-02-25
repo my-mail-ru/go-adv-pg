@@ -171,6 +171,21 @@ const (
 			{{ template "sql_result" $col }}=${{inc $i}}
 		{{- end -}}`
 	{{ end -}}
+	{{- if $model.PrimaryKeyIndex }}
+		sqlDelete{{$model.GoName}} = `DELETE FROM {{$model.Table.Table}} WHERE
+			{{- range $i, $col := $model.PrimaryKeyColumns }} {{ if $i }}AND {{ end -}}
+				{{$col.ColumnName}}=${{inc $i}}
+			{{- end -}}`
+		sqlDeleteMultiHead{{$model.GoName}} = `DELETE FROM {{$model.Table.Table}} WHERE
+			{{- if eq (len $model.PrimaryKeyColumns) 1 -}}
+				{{- range $col := $model.PrimaryKeyColumns }} {{$col.ColumnName}} IN ({{ end -}}
+			{{- else }} (
+				{{- range $i, $col := $model.PrimaryKeyColumns -}}
+					{{- if $i }}, {{ end -}}
+					{{$col.ColumnName}}
+				{{- end -}}) IN (
+			{{- end -}}`
+	{{ end -}}
 )
 
 {{- if $model.IsImplicit }}
@@ -793,10 +808,7 @@ func (dao {{$model.DAO}}) Insert(ctx context.Context, data *{{$model.RecordType}
 {{ if $model.PrimaryKeyIndex -}}
 	func (model *{{$model.RecordType}}) queryDelete() *{{$.AdvPgPkg}}.SimpleQuery {
 		return {{$.AdvPgPkg}}.NewSimpleQuery(
-			`DELETE FROM {{$model.Table.Table}} WHERE
-			{{- range $i, $col := $model.PrimaryKeyColumns }} {{ if $i }}AND {{ end -}}
-				{{$col.ColumnName}}=${{inc $i}}
-			{{- end -}}`,
+			sqlDelete{{$model.GoName}},
 			[]any{
 				{{- range $i, $col := $model.PrimaryKeyColumns -}}
 					{{ if $i }}, {{ end -}}
@@ -827,15 +839,7 @@ func (dao {{$model.DAO}}) Insert(ctx context.Context, data *{{$model.RecordType}
 			return &{{$.AdvPgPkg}}.QueryBuilder{}
 		}
 
-		q := {{$.AdvPgPkg}}.NewQueryBuilder(`DELETE FROM {{$model.Table.Table}} WHERE
-		{{- if eq (len $model.PrimaryKeyColumns) 1 -}}
-			{{- range $col := $model.PrimaryKeyColumns }} {{$col.ColumnName}} IN ({{ end -}}
-		{{- else }} (
-			{{- range $i, $col := $model.PrimaryKeyColumns -}}
-				{{- if $i }}, {{ end -}}
-				{{$col.ColumnName}}
-			{{- end -}}) IN (
-		{{- end -}}`)
+		q := {{$.AdvPgPkg}}.NewQueryBuilder(sqlDeleteMultiHead{{$model.GoName}})
 
 		for i, model := range models {
 			{{- if eq (len $model.PrimaryKeyColumns) 1 }}
