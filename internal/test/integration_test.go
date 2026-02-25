@@ -1179,16 +1179,18 @@ func TestSelectLimitOffsetDAO(t *testing.T) {
 
 	t.Run("no DefaultLimit no WithLimit", func(t *testing.T) {
 		// Insert 10 users; User.Name index has no DefaultLimit.
+		// Use a unique name to avoid collisions with previous test runs.
+		name := "LimitTest" + strconv.Itoa(userID)
 		users := make([]UserRecord, total)
 		for i := range users {
 			users[i] = *(User{
-				Name: "LimitTest",
+				Name: name,
 				Type: i,
 			}.Record())
 		}
 		must(t, userDAO.InsertMulti(ctx, users))
 
-		got, err := userDAO.SelectByName(ctx, "LimitTest")
+		got, err := userDAO.SelectByName(ctx, name)
 		must(t, err)
 
 		if len(got) != total {
@@ -1197,7 +1199,8 @@ func TestSelectLimitOffsetDAO(t *testing.T) {
 	})
 
 	t.Run("WithLimit on index without DefaultLimit", func(t *testing.T) {
-		got, err := userDAO.SelectByName(ctx, "LimitTest", advpg.WithLimit(5))
+		name := "LimitTest" + strconv.Itoa(userID)
+		got, err := userDAO.SelectByName(ctx, name, advpg.WithLimit(5))
 		must(t, err)
 
 		if len(got) != 5 {
