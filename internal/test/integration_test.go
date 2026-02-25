@@ -762,6 +762,127 @@ func TestUpdateMultiExtLinkDAO(t *testing.T) {
 	})
 }
 
+func TestSQLValueUpdateExtLinkDAO(t *testing.T) {
+	ctx, db, _ := connectDB(t)
+	extDAO := NewExtLinkDAO(db)
+	userID := createUserID(t, db)
+	now := MyTime{Time: time.Now().Round(time.Second)}
+
+	// Insert a record; modified_at and refreshed_at are InitByStorage (DEFAULT now()).
+	ext := ExtLink{
+		UserID:     userID,
+		ExternalID: 200,
+		CreatedAt:  now,
+		Status:     1,
+	}.Record()
+	must(t, extDAO.Insert(ctx, ext))
+
+	if ext.ModifiedAt().IsZero() {
+		t.Fatal("ModifiedAt should be set by InitByStorage after Insert")
+	}
+	if ext.RefreshedAt().IsZero() {
+		t.Fatal("RefreshedAt should be set by InitByStorage after Insert")
+	}
+
+	t.Run("FullUpdate with SQLValue and SQLScan RETURNING", func(t *testing.T) {
+		// Set modified_at to a known epoch value; SQLValue wraps it as TIMESTAMPTZ.
+		knownEpoch := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC).Unix()
+		knownTime := MyTime{Time: time.Unix(knownEpoch, 0)}
+		ext.SetModifiedAt(knownTime)
+		refreshedBefore := ext.RefreshedAt()
+
+		must(t, extDAO.FullUpdate(ctx, ext))
+
+		// Verify modified_at round-trips correctly through SQLValue (SET) and SQLScan (SELECT).
+		got, err := extDAO.SelectByPrimaryKey(ctx, ext.UserID(), ext.ExternalID())
+		must(t, err)
+
+		if got.ModifiedAt().Unix() != knownEpoch {
+			t.Fatalf("ModifiedAt after FullUpdate: got %d, want %d", got.ModifiedAt().Unix(), knownEpoch)
+		}
+
+		// Verify refreshed_at was updated by the BEFORE UPDATE trigger and returned via RETURNING with SQLScan.
+		if ext.RefreshedAt().Unix() < refreshedBefore.Unix() {
+			t.Fatalf("RefreshedAt should be updated by trigger: before=%v, after=%v", refreshedBefore, ext.RefreshedAt())
+		}
+		if ext.RefreshedAt().IsZero() {
+			t.Fatal("RefreshedAt from RETURNING should not be zero")
+		}
+	})
+
+	t.Run("smart Update with SQLValue and SQLScan RETURNING", func(t *testing.T) {
+		// Re-select to get a clean record.
+		selected, err := extDAO.SelectByPrimaryKey(ctx, ext.UserID(), ext.ExternalID())
+		must(t, err)
+
+		knownEpoch := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC).Unix()
+		knownTime := MyTime{Time: time.Unix(knownEpoch, 0)}
+		selected.SetModifiedAt(knownTime)
+
+		must(t, extDAO.Update(ctx, &selected))
+
+		// Verify modified_at round-trips through SQLValue in the smart Update.
+		got, err := extDAO.SelectByPrimaryKey(ctx, ext.UserID(), ext.ExternalID())
+		must(t, err)
+
+		if got.ModifiedAt().Unix() != knownEpoch {
+			t.Fatalf("ModifiedAt after smart Update: got %d, want %d", got.ModifiedAt().Unix(), knownEpoch)
+		}
+
+		// RefreshedAt should be updated by the trigger and returned via RETURNING with SQLScan.
+		if selected.RefreshedAt().IsZero() {
+			t.Fatal("RefreshedAt from smart Update RETURNING should not be zero")
+		}
+	})
+
+	t.Run("UpdateMulti with SQLValue and SQLScan RETURNING", func(t *testing.T) {
+		// Insert a second record.
+		ext2 := ExtLink{
+			UserID:     userID,
+			ExternalID: 201,
+			CreatedAt:  now,
+			Status:     2,
+		}.Record()
+		must(t, extDAO.Insert(ctx, ext2))
+
+		// Re-select both records.
+		r1, err := extDAO.SelectByPrimaryKey(ctx, userID, 200)
+		must(t, err)
+		r2, err := extDAO.SelectByPrimaryKey(ctx, userID, 201)
+		must(t, err)
+
+		// Set modified_at to known values.
+		epoch1 := time.Date(2023, 3, 1, 0, 0, 0, 0, time.UTC).Unix()
+		epoch2 := time.Date(2023, 6, 1, 0, 0, 0, 0, time.UTC).Unix()
+		r1.SetModifiedAt(MyTime{Time: time.Unix(epoch1, 0)})
+		r2.SetModifiedAt(MyTime{Time: time.Unix(epoch2, 0)})
+
+		records := []ExtLinkRecord{r1, r2}
+		must(t, extDAO.UpdateMulti(ctx, records))
+
+		// Verify modified_at values round-trip through SQLValue in UpdateMulti VALUES.
+		got1, err := extDAO.SelectByPrimaryKey(ctx, userID, 200)
+		must(t, err)
+		got2, err := extDAO.SelectByPrimaryKey(ctx, userID, 201)
+		must(t, err)
+
+		if got1.ModifiedAt().Unix() != epoch1 {
+			t.Fatalf("records[0].ModifiedAt: got %d, want %d", got1.ModifiedAt().Unix(), epoch1)
+		}
+		if got2.ModifiedAt().Unix() != epoch2 {
+			t.Fatalf("records[1].ModifiedAt: got %d, want %d", got2.ModifiedAt().Unix(), epoch2)
+		}
+
+		// Verify refreshed_at was returned via RETURNING with SQLScan.
+		if records[0].RefreshedAt().IsZero() {
+			t.Fatal("records[0].RefreshedAt from UpdateMulti RETURNING should not be zero")
+		}
+		if records[1].RefreshedAt().IsZero() {
+			t.Fatal("records[1].RefreshedAt from UpdateMulti RETURNING should not be zero")
+		}
+	})
+}
+
 func TestUpdateMultiUserOptionsDAO(t *testing.T) {
 	ctx, db, _ := connectDB(t)
 	optDAO := NewUserOptionsDAO(db)
@@ -803,6 +924,54 @@ func TestUpdateMultiUserOptionsDAO(t *testing.T) {
 		err := optDAO.UpdateMulti(ctx, records)
 		if err != nil {
 			t.Fatalf("expected no error for missing keys without RETURNING, got: %v", err)
+		}
+	})
+}
+
+func TestResetAfterOperation(t *testing.T) {
+	ctx, db, _ := connectDB(t)
+	optDAO := NewUserOptionsDAO(db)
+	errDAO := NewUserOptionsDAO(errDB{})
+	userID := createUserID(t, db)
+
+	t.Run("Insert resets record", func(t *testing.T) {
+		rec := UserOptions{UserID: userID, OptionID: 500, Flag: true, Option: "ins"}.Record()
+		rec.SetFlag(false)
+		must(t, optDAO.Insert(ctx, rec))
+		// After Insert, updateMask should be reset; smart Update on errDB must skip query.
+		must(t, errDAO.Update(ctx, rec))
+	})
+
+	t.Run("FullUpdate resets record", func(t *testing.T) {
+		rec := UserOptions{UserID: userID, OptionID: 500, Flag: true, Option: "upd"}.Record()
+		rec.SetOption("full-updated")
+		must(t, optDAO.FullUpdate(ctx, rec))
+		must(t, errDAO.Update(ctx, rec))
+	})
+
+	t.Run("InsertMulti resets records", func(t *testing.T) {
+		recs := []UserOptionsRecord{
+			*(UserOptions{UserID: userID, OptionID: 501, Flag: true, Option: "multi1"}.Record()),
+			*(UserOptions{UserID: userID, OptionID: 502, Flag: false, Option: "multi2"}.Record()),
+		}
+		recs[0].SetOption("changed")
+		recs[1].SetFlag(true)
+		must(t, optDAO.InsertMulti(ctx, recs))
+		for i := range recs {
+			must(t, errDAO.Update(ctx, &recs[i]))
+		}
+	})
+
+	t.Run("UpdateMulti resets records", func(t *testing.T) {
+		recs := []UserOptionsRecord{
+			*(UserOptions{UserID: userID, OptionID: 501, Flag: false, Option: "um1"}.Record()),
+			*(UserOptions{UserID: userID, OptionID: 502, Flag: true, Option: "um2"}.Record()),
+		}
+		recs[0].SetOption("multi-updated-1")
+		recs[1].SetFlag(false)
+		must(t, optDAO.UpdateMulti(ctx, recs))
+		for i := range recs {
+			must(t, errDAO.Update(ctx, &recs[i]))
 		}
 	})
 }

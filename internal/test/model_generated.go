@@ -9,6 +9,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	advpg "github.com/my-mail-ru/go-adv-pg"
@@ -18,14 +19,14 @@ import (
 //// ExtLink ////
 
 const (
-	sqlSelectExtLink          = `SELECT user_id, ext_id, EXTRACT(EPOCH FROM created_at::TIMESTAMP WITH TIME ZONE)::BIGINT AS created_at, status, link_count FROM ext_links`
+	sqlSelectExtLink          = `SELECT user_id, ext_id, EXTRACT(EPOCH FROM created_at::TIMESTAMP WITH TIME ZONE)::BIGINT AS created_at, status, link_count, EXTRACT(EPOCH FROM modified_at::TIMESTAMP WITH TIME ZONE)::BIGINT AS modified_at, EXTRACT(EPOCH FROM refreshed_at::TIMESTAMP WITH TIME ZONE)::BIGINT AS refreshed_at FROM ext_links`
 	sqlInsertHeadExtLink      = `INSERT INTO ext_links (user_id, ext_id, created_at, status) VALUES `
-	sqlInsertTailExtLink      = ` ON CONFLICT (user_id, ext_id) DO UPDATE SET status=EXCLUDED.status, link_count=ext_links.link_count+$5 RETURNING link_count`
+	sqlInsertTailExtLink      = ` ON CONFLICT (user_id, ext_id) DO UPDATE SET status=EXCLUDED.status, modified_at=EXCLUDED.modified_at, link_count=ext_links.link_count+$5 RETURNING link_count, EXTRACT(EPOCH FROM modified_at::TIMESTAMP WITH TIME ZONE)::BIGINT AS modified_at, EXTRACT(EPOCH FROM refreshed_at::TIMESTAMP WITH TIME ZONE)::BIGINT AS refreshed_at`
 	sqlInsertExtLink          = sqlInsertHeadExtLink + `($1, $2, TIMESTAMP WITH TIME ZONE 'epoch' + INTERVAL '1 sec' * $3, $4)` + sqlInsertTailExtLink
-	sqlFullUpdateExtLink      = `UPDATE ext_links SET status=$1, link_count=link_count+$2`
-	sqlUpdateReturningExtLink = ` RETURNING link_count`
-	sqlUpdateMultiHeadExtLink = `UPDATE ext_links SET status=(t::ext_links).status, link_count=ext_links.link_count+(t::ext_links).link_count FROM (VALUES `
-	sqlUpdateMultiTailExtLink = `) t WHERE ext_links.user_id=(t::ext_links).user_id AND ext_links.ext_id=(t::ext_links).ext_id RETURNING ext_links.link_count`
+	sqlFullUpdateExtLink      = `UPDATE ext_links SET status=$1, modified_at=TIMESTAMP WITH TIME ZONE 'epoch' + INTERVAL '1 sec' * $2, link_count=link_count+$3`
+	sqlUpdateReturningExtLink = ` RETURNING link_count, EXTRACT(EPOCH FROM refreshed_at::TIMESTAMP WITH TIME ZONE)::BIGINT AS refreshed_at`
+	sqlUpdateMultiHeadExtLink = `UPDATE ext_links SET status=(t::ext_links).status, modified_at=(t::ext_links).modified_at, link_count=ext_links.link_count+(t::ext_links).link_count FROM (VALUES `
+	sqlUpdateMultiTailExtLink = `) t WHERE ext_links.user_id=(t::ext_links).user_id AND ext_links.ext_id=(t::ext_links).ext_id RETURNING ext_links.link_count, EXTRACT(EPOCH FROM ext_links.refreshed_at::TIMESTAMP WITH TIME ZONE)::BIGINT AS refreshed_at`
 	sqlSelectMutatorsExtLink  = `SELECT link_count FROM ext_links WHERE user_id=$1 AND ext_id=$2`
 
 	sqlDeleteExtLink          = `DELETE FROM ext_links WHERE user_id=$1 AND ext_id=$2`
@@ -62,6 +63,14 @@ func (model *ExtLinkRecord) LinkCount() int {
 	return model.data.LinkCount
 }
 
+func (model *ExtLinkRecord) ModifiedAt() MyTime {
+	return model.data.ModifiedAt
+}
+
+func (model *ExtLinkRecord) RefreshedAt() MyTime {
+	return model.data.RefreshedAt
+}
+
 func (model *ExtLinkRecord) SetUserID(x int) {
 	model.data.UserID = x
 }
@@ -77,6 +86,11 @@ func (model *ExtLinkRecord) SetCreatedAt(x MyTime) {
 func (model *ExtLinkRecord) SetStatus(x int) {
 	model.data.Status = x
 	model.updateMask |= 1
+}
+
+func (model *ExtLinkRecord) SetModifiedAt(x MyTime) {
+	model.data.ModifiedAt = x
+	model.updateMask |= 2
 }
 
 func (model *ExtLinkRecord) IncLinkCount() {
@@ -107,7 +121,7 @@ func (model *ExtLinkRecord) querySelectByPrimaryKey(inUserID int, inExternalID i
 	return advpg.NewSimpleQuery(
 		sqlSelectExtLink+` WHERE user_id=$1 AND ext_id=$2`,
 		[]any{inUserID, inExternalID},
-		[]any{&model.data.UserID, &model.data.ExternalID, &model.data.CreatedAt, &model.data.Status, &model.data.LinkCount},
+		[]any{&model.data.UserID, &model.data.ExternalID, &model.data.CreatedAt, &model.data.Status, &model.data.LinkCount, &model.data.ModifiedAt, &model.data.RefreshedAt},
 	)
 }
 
@@ -150,7 +164,7 @@ func (model *ExtLinkRecord) querySelectMultiByStatus(inStatuses []int) *advpg.Si
 	return advpg.NewSimpleQuery(
 		sqlSelectExtLink+` WHERE status=IN($1)`,
 		[]any{inStatuses},
-		[]any{&model.data.UserID, &model.data.ExternalID, &model.data.CreatedAt, &model.data.Status, &model.data.LinkCount},
+		[]any{&model.data.UserID, &model.data.ExternalID, &model.data.CreatedAt, &model.data.Status, &model.data.LinkCount, &model.data.ModifiedAt, &model.data.RefreshedAt},
 	)
 }
 
@@ -204,7 +218,7 @@ func (model *ExtLinkRecord) queryInsert() *advpg.SimpleQuery {
 	return advpg.NewSimpleQuery(
 		sqlInsertExtLink,
 		[]any{model.data.UserID, model.data.ExternalID, model.data.CreatedAt, model.data.Status, model.mutLinkCount},
-		[]any{&model.data.LinkCount},
+		[]any{&model.data.LinkCount, &model.data.ModifiedAt, &model.data.RefreshedAt},
 	)
 }
 
@@ -225,7 +239,7 @@ func queryUpdateMultiExtLink(models []ExtLinkRecord) *advpg.QueryBuilder {
 		return &advpg.QueryBuilder{}
 	}
 
-	q := advpg.NewQueryBuilderCap(sqlUpdateMultiHeadExtLink, 4*len(models), 1*len(models))
+	q := advpg.NewQueryBuilderCap(sqlUpdateMultiHeadExtLink, 5*len(models), 2*len(models))
 
 	for i, model := range models {
 		if i == 0 {
@@ -247,9 +261,14 @@ func queryUpdateMultiExtLink(models []ExtLinkRecord) *advpg.QueryBuilder {
 		q.AppendSQL(",")
 		q.AppendPlaceholder()
 		q.AppendArgs(model.mutLinkCount)
+		q.AppendSQL(",")
+		q.AppendSQL(strings.ReplaceAll("TIMESTAMP WITH TIME ZONE 'epoch' + INTERVAL '1 sec' * %s", "%s", q.Placeholder()))
+		q.AppendArgs(model.data.ModifiedAt)
+		q.AppendSQL(",")
+		q.AppendSQL("NULL")
 		q.AppendSQL(")")
 
-		q.AppendResults(&models[i].data.LinkCount)
+		q.AppendResults(&models[i].data.LinkCount, &models[i].data.RefreshedAt)
 	}
 
 	q.AppendSQL(sqlUpdateMultiTailExtLink)
@@ -266,7 +285,7 @@ func (dao ExtLinkDAO) UpdateMulti(ctx context.Context, records []ExtLinkRecord) 
 	if err == nil {
 		results := q.Results()
 		from := 0
-		to := 1
+		to := 2
 
 		for rows.Next() {
 			if err = rows.Scan(results[from:to]...); err != nil {
@@ -274,7 +293,7 @@ func (dao ExtLinkDAO) UpdateMulti(ctx context.Context, records []ExtLinkRecord) 
 			}
 
 			from = to
-			to += 1
+			to += 2
 		}
 
 		if err == nil {
@@ -282,7 +301,7 @@ func (dao ExtLinkDAO) UpdateMulti(ctx context.Context, records []ExtLinkRecord) 
 		}
 
 		if from < len(results) {
-			err = fmt.Errorf("ExtLinkDAO.UpdateMulti: got %d records, but %d was expected", from/1, len(results)/1)
+			err = fmt.Errorf("ExtLinkDAO.UpdateMulti: got %d records, but %d was expected", from/2, len(results)/2)
 		}
 	}
 
@@ -297,16 +316,22 @@ func (dao ExtLinkDAO) UpdateMulti(ctx context.Context, records []ExtLinkRecord) 
 
 func (model *ExtLinkRecord) queryFullUpdate() *advpg.SimpleQuery {
 	return advpg.NewSimpleQuery(
-		sqlFullUpdateExtLink+" WHERE user_id=$3 AND ext_id=$4"+sqlUpdateReturningExtLink,
-		[]any{model.data.Status, model.mutLinkCount, model.data.UserID, model.data.ExternalID},
-		[]any{&model.data.LinkCount},
+		sqlFullUpdateExtLink+" WHERE user_id=$4 AND ext_id=$5"+sqlUpdateReturningExtLink,
+		[]any{model.data.Status, model.data.ModifiedAt, model.mutLinkCount, model.data.UserID, model.data.ExternalID},
+		[]any{&model.data.LinkCount, &model.data.RefreshedAt},
 	)
 }
 
 func (dao ExtLinkDAO) FullUpdate(ctx context.Context, data *ExtLinkRecord) error {
 	ctx = advpgconn.QueryInfoCtx(ctx, "ext_links", "")
 	q := data.queryFullUpdate()
-	return dao.db.QueryRow(ctx, q.SQL(), q.Args()...).Scan(q.Results()...)
+	err := dao.db.QueryRow(ctx, q.SQL(), q.Args()...).Scan(q.Results()...)
+
+	if err == nil {
+		data.reset()
+	}
+
+	return err
 }
 
 func (model *ExtLinkRecord) queryUpdate() *advpg.QueryBuilder {
@@ -323,6 +348,15 @@ func (model *ExtLinkRecord) queryUpdate() *advpg.QueryBuilder {
 		q.AppendSQL(" status=$")
 		q.AppendPlaceholderNum()
 		q.AppendArgs(model.data.Status)
+	}
+	if model.updateMask&2 != 0 {
+		if len(q.Args()) != 0 {
+			q.AppendSQL(",")
+		}
+
+		q.AppendSQL(" modified_at=")
+		q.AppendSQL(strings.ReplaceAll("TIMESTAMP WITH TIME ZONE 'epoch' + INTERVAL '1 sec' * %s", "%s", q.Placeholder()))
+		q.AppendArgs(model.data.ModifiedAt)
 	}
 	if model.mutLinkCount != 0 {
 		if len(q.Args()) != 0 {
@@ -341,7 +375,7 @@ func (model *ExtLinkRecord) queryUpdate() *advpg.QueryBuilder {
 	q.AppendArgs(model.data.ExternalID)
 
 	q.AppendSQL(sqlUpdateReturningExtLink)
-	q.SetResults([]any{&model.data.LinkCount})
+	q.SetResults([]any{&model.data.LinkCount, &model.data.RefreshedAt})
 
 	return q
 }
@@ -358,7 +392,6 @@ func (model *ExtLinkRecord) reset() {
 	model.updateMask = 0
 	model.mutLinkCount = 0
 }
-
 func (dao ExtLinkDAO) Update(ctx context.Context, data *ExtLinkRecord) error {
 	q := advpg.Query(data.queryUpdate())
 	index := ""
@@ -626,7 +659,7 @@ func queryUpdateMultiSeen(models []SeenRecord) *advpg.QueryBuilder {
 		return &advpg.QueryBuilder{}
 	}
 
-	q := advpg.NewQueryBuilderCap(sqlUpdateMultiHeadSeen, 2*len(models), 0*len(models))
+	q := advpg.NewQueryBuilderCap(sqlUpdateMultiHeadSeen, 2*len(models), 0)
 
 	for i, model := range models {
 		if i == 0 {
@@ -675,15 +708,15 @@ func (dao SeenDAO) FullUpdate(ctx context.Context, data *SeenRecord) error {
 	ctx = advpgconn.QueryInfoCtx(ctx, "seen", "")
 	q := data.queryFullUpdate()
 	ct, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
-	if err != nil {
-		return err
+	if err == nil && ct.RowsAffected() == 0 {
+		err = sql.ErrNoRows
 	}
 
-	if ct.RowsAffected() == 0 {
-		return sql.ErrNoRows
+	if err == nil {
+		data.reset()
 	}
 
-	return nil
+	return err
 }
 
 func (model *SeenRecord) queryUpdate() *advpg.QueryBuilder {
@@ -711,7 +744,6 @@ func (model *SeenRecord) queryUpdate() *advpg.QueryBuilder {
 func (model *SeenRecord) reset() {
 	model.updateMask = 0
 }
-
 func (dao SeenDAO) Update(ctx context.Context, data *SeenRecord) error {
 	q := data.queryUpdate()
 	query := q.SQL()
@@ -1242,7 +1274,13 @@ func (model *UserRecord) queryFullUpdate() *advpg.SimpleQuery {
 func (dao UserDAO) FullUpdate(ctx context.Context, data *UserRecord) error {
 	ctx = advpgconn.QueryInfoCtx(ctx, "users", "")
 	q := data.queryFullUpdate()
-	return dao.db.QueryRow(ctx, q.SQL(), q.Args()...).Scan(q.Results()...)
+	err := dao.db.QueryRow(ctx, q.SQL(), q.Args()...).Scan(q.Results()...)
+
+	if err == nil {
+		data.reset()
+	}
+
+	return err
 }
 
 func (model *UserRecord) queryUpdate() *advpg.QueryBuilder {
@@ -1300,7 +1338,6 @@ func (model *UserRecord) reset() {
 	model.updateMask = 0
 	model.mutPostCount = 0
 }
-
 func (dao UserDAO) Update(ctx context.Context, data *UserRecord) error {
 	q := advpg.Query(data.queryUpdate())
 	index := ""
@@ -1636,7 +1673,7 @@ func queryUpdateMultiUserOptions(models []UserOptionsRecord) *advpg.QueryBuilder
 		return &advpg.QueryBuilder{}
 	}
 
-	q := advpg.NewQueryBuilderCap(sqlUpdateMultiHeadUserOptions, 4*len(models), 0*len(models))
+	q := advpg.NewQueryBuilderCap(sqlUpdateMultiHeadUserOptions, 4*len(models), 0)
 
 	for i, model := range models {
 		if i == 0 {
@@ -1691,15 +1728,15 @@ func (dao UserOptionsDAO) FullUpdate(ctx context.Context, data *UserOptionsRecor
 	ctx = advpgconn.QueryInfoCtx(ctx, "user_options", "")
 	q := data.queryFullUpdate()
 	ct, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
-	if err != nil {
-		return err
+	if err == nil && ct.RowsAffected() == 0 {
+		err = sql.ErrNoRows
 	}
 
-	if ct.RowsAffected() == 0 {
-		return sql.ErrNoRows
+	if err == nil {
+		data.reset()
 	}
 
-	return nil
+	return err
 }
 
 func (model *UserOptionsRecord) queryUpdate() *advpg.QueryBuilder {
@@ -1739,7 +1776,6 @@ func (model *UserOptionsRecord) queryUpdate() *advpg.QueryBuilder {
 func (model *UserOptionsRecord) reset() {
 	model.updateMask = 0
 }
-
 func (dao UserOptionsDAO) Update(ctx context.Context, data *UserOptionsRecord) error {
 	q := data.queryUpdate()
 	query := q.SQL()
@@ -1976,7 +2012,6 @@ func (model *UserViewsRecord) querySelectMutators() *advpg.SimpleQuery {
 func (model *UserViewsRecord) reset() {
 	model.mutViews = 0
 }
-
 func (dao UserViewsDAO) Update(ctx context.Context, data *UserViewsRecord) error {
 	q := advpg.Query(data.queryUpdate())
 	index := ""

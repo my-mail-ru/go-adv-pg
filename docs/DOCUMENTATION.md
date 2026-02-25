@@ -205,6 +205,8 @@ A successful Insert \(or InsertMulti\) will reset the changed field flags for al
 
 Note that InsertMulti with InitByStorage depends on the non\-documented but widely used PostgreSQL behavior of the \`INSERT ... RETURNING\` query: rows are returned in the same order as specified in \`VALUES\`.
 
+When OnConflictDoNothing is used with InsertMulti and the table has RETURNING columns \(e.g. InitByStorage or mutators\), conflicting rows are silently skipped by PostgreSQL and produce no RETURNING output. Because the generated code scans RETURNING rows into record slots sequentially, the returned values may be assigned to wrong records: for example, if records\[1\] conflicts and is skipped, the RETURNING row for records\[2\] will be scanned into records\[1\]'s fields. The record count check is intentionally disabled for OnConflictDoNothing tables, so no error is returned in this case.
+
 TODO support [Mutators](<https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-Mutators>) with UpdateOnConflict enabled using \`INSERT ... ON CONFLICT DO UPDATE ... FROM VALUES\` syntax.
 
 ### Update
@@ -215,7 +217,7 @@ The update operation is represented by two methods:
 
 - Update \(aka "smart" Update\). Like FullUpdate, it requires a primary key to be declared. Requires [ActiveRecord](<https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-ActiveRecord>) \(i.e. DisableActiveRecord set to false for a [Table](<#Table>)\). The Record type's Setter methods and mutator \(Inc/Dec/Add\) methods track data changes. Only the changed fields \(i.e. on which the Set method is called, or which mutator counter is non\-zero\) are mentioned in the SET clause of the UPDATE query. If a record has no changed fields and there are no mutator fields defined, the UPDATE query isn't issued at all. When there are some mutator fields defined, but no fields are changed \(i.e. no Set methods are called after the previous operation, and all mutator counters are zero\), the SELECT operation is issued instead of the UPDATE to retrieve the current mutator values from a database. Thus, all mutator fields are guaranteed to hold actual values when the Update method returns.
 
-- UpdateMulti. Batch update issuing a single \`UPDATE...FROM \(VALUES ...\)\` query. Equivalent to calling FullUpdate for each record, but in one query. Always updates all updatable columns \(not "smart"/change\-tracked\). Mutator columns are included as increments \(same semantics as FullUpdate\). Like InsertMulti, result ordering relies on PostgreSQL returning rows in VALUES order.
+- UpdateMulti. Batch update issuing a single \`UPDATE...FROM \(VALUES ...\)\` query. Equivalent to calling FullUpdate for each record, but in one query. Always updates all updatable columns \(not "smart"/change\-tracked\). Mutator columns are included as increments \(same semantics as FullUpdate\). Like InsertMulti, result ordering relies on PostgreSQL returning rows in VALUES order. When the table has RETURNING columns \(UpdateByStorage or mutators\) and some primary keys in the input slice don't match any existing rows, the missing rows produce no RETURNING output. The generated code detects the count mismatch and returns an error, but by that point the RETURNING values have already been scanned into wrong record slots sequentially \(same issue as InsertMulti with OnConflictDoNothing, except that here the error is reported\).
 
 The following [Field](<#Field>) properties control the [Update](<https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-Update>) method behavior:
 

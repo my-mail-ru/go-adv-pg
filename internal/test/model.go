@@ -65,11 +65,13 @@ var _ = advpg.Table{
 // SQLScan, SQLValue, and EnableMutators with InitByStorage (this time
 // along with UpdateOnConflict set, unlike [User]).
 type ExtLink struct {
-	UserID     int    `db:"user_id"`
-	ExternalID int    `db:"ext_id"`
-	CreatedAt  MyTime `db:"created_at"`
-	Status     int    `db:"status"`
-	LinkCount  int    `db:"link_count"`
+	UserID      int    `db:"user_id"`
+	ExternalID  int    `db:"ext_id"`
+	CreatedAt   MyTime `db:"created_at"`
+	Status      int    `db:"status"`
+	LinkCount   int    `db:"link_count"`
+	ModifiedAt  MyTime `db:"modified_at"`
+	RefreshedAt MyTime `db:"refreshed_at"`
 }
 
 var _ = advpg.Table{
@@ -93,6 +95,16 @@ var _ = advpg.Table{
 		Field:          "link_count",
 		EnableMutators: true,
 		InitByStorage:  true,
+	}, {
+		Field:         "modified_at",
+		InitByStorage: true,
+		SQLScan:       "EXTRACT(EPOCH FROM %s::TIMESTAMP WITH TIME ZONE)::BIGINT AS %s",
+		SQLValue:      "TIMESTAMP WITH TIME ZONE 'epoch' + INTERVAL '1 sec' * %s",
+	}, {
+		Field:           "refreshed_at",
+		InitByStorage:   true,
+		UpdateByStorage: true,
+		SQLScan:         "EXTRACT(EPOCH FROM %s::TIMESTAMP WITH TIME ZONE)::BIGINT AS %s",
 	}},
 }
 

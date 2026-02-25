@@ -23,14 +23,29 @@ CREATE OR REPLACE TRIGGER users_set_updated
 	EXECUTE FUNCTION users_set_updated();
 
 CREATE TABLE ext_links (
-	user_id    INTEGER NOT NULL REFERENCES users,
-	ext_id     INTEGER NOT NULL,
-	created_at TIMESTAMPTZ NOT NULL,
-	status     INTEGER NOT NULL,
-	link_count INTEGER NOT NULL DEFAULT 1,
+	user_id      INTEGER NOT NULL REFERENCES users,
+	ext_id       INTEGER NOT NULL,
+	created_at   TIMESTAMPTZ NOT NULL,
+	status       INTEGER NOT NULL,
+	link_count   INTEGER NOT NULL DEFAULT 1,
+	modified_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+	refreshed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
 
 	PRIMARY KEY (user_id, ext_id)
 );
+
+CREATE OR REPLACE FUNCTION ext_links_set_refreshed() RETURNS TRIGGER AS $$
+BEGIN
+	NEW.refreshed_at = now();
+	RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE TRIGGER ext_links_set_refreshed
+	BEFORE UPDATE
+	ON ext_links
+	FOR EACH ROW
+	EXECUTE FUNCTION ext_links_set_refreshed();
 
 CREATE TABLE user_views (
 	user_id    INTEGER NOT NULL PRIMARY KEY REFERENCES users,

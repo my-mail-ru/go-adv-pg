@@ -140,12 +140,7 @@ const (
 	{{- if $model.UpdateValueColumns }}{{ $valuesAlias := $model.UpdateMultiAlias }}
 		sqlUpdateMultiHead{{$model.GoName}} = `UPDATE {{$model.Table.Table}} SET
 			{{- range $i, $col := $model.UpdateValueColumns -}}
-				{{ if $i }},{{ end }} {{$col.ColumnName}}=
-				{{- if $col.SQLValue -}}
-					{{simple_printf $col.SQLValue (printf "(%s::%s).%s" $valuesAlias $model.Table.Table $col.ColumnName)}}
-				{{- else -}}
-					({{$valuesAlias}}::{{$model.Table.Table}}).{{$col.ColumnName}}
-				{{- end -}}
+				{{ if $i }},{{ end }} {{$col.ColumnName}}=({{$valuesAlias}}::{{$model.Table.Table}}).{{$col.ColumnName}}
 			{{- end -}}
 			{{- range $i, $col := $model.MutatorColumns -}}
 				{{ if or $i $model.UpdateValueColumns }},{{ end }} {{$col.ColumnName}}={{$model.Table.Table}}.{{$col.ColumnName}}+({{$valuesAlias}}::{{$model.Table.Table}}).{{$col.ColumnName}}
@@ -156,7 +151,7 @@ const (
 			{{- end -}}
 			{{- if $model.UpdateResultColumns }} RETURNING
 				{{- range $i, $col := $model.UpdateResultColumns }}{{ if $i }},{{ end }}
-					{{- if $col.SQLScan }} {{ simple_printf $col.SQLScan (print $model.Table.Table "." $col.ColumnName) -}}
+					{{- if $col.SQLScan }} {{ sql_scan_qualified $col.SQLScan (print $model.Table.Table "." $col.ColumnName) $col.ColumnName -}}
 					{{- else }} {{$model.Table.Table}}.{{$col.ColumnName}}
 					{{- end -}}
 				{{- end -}}
@@ -466,7 +461,7 @@ func (dao {{$model.DAO}}) Insert(ctx context.Context, data *{{$model.RecordType}
 		_, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
 	{{- end }}
 
-	{{ if not $model.DisableActiveRecord -}}
+	{{ if and (not $model.DisableActiveRecord) (or $model.UpdateValueColumns $model.MutatorColumns) -}}
 		if err == nil {
 			data.reset()
 		}
@@ -481,7 +476,7 @@ func (dao {{$model.DAO}}) Insert(ctx context.Context, data *{{$model.RecordType}
 			return &{{$.AdvPgPkg}}.QueryBuilder{}
 		}
 
-		q := {{$.AdvPgPkg}}.NewQueryBuilderCap(sqlInsertHead{{$model.GoName}}, {{len $model.InsertValueColumns}}*len(models), {{len $model.InsertResultColumns}}*len(models))
+		q := {{$.AdvPgPkg}}.NewQueryBuilderCap(sqlInsertHead{{$model.GoName}}, {{len $model.InsertValueColumns}}*len(models), {{if $model.InsertResultColumns}}{{len $model.InsertResultColumns}}*len(models){{else}}0{{end}})
 
 		for i, model := range models {
 			if i == 0 {
@@ -547,7 +542,7 @@ func (dao {{$model.DAO}}) Insert(ctx context.Context, data *{{$model.RecordType}
 			_, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
 		{{- end }}
 
-		{{ if not $model.DisableActiveRecord -}}
+		{{ if and (not $model.DisableActiveRecord) (or $model.UpdateValueColumns $model.MutatorColumns) -}}
 			if err == nil {
 				for i := range records {
 					records[i].reset()
@@ -566,7 +561,7 @@ func (dao {{$model.DAO}}) Insert(ctx context.Context, data *{{$model.RecordType}
 			return &{{$.AdvPgPkg}}.QueryBuilder{}
 		}
 
-		q := {{$.AdvPgPkg}}.NewQueryBuilderCap(sqlUpdateMultiHead{{$model.GoName}}, {{add (len $model.PrimaryKeyColumns) (add (len $model.UpdateValueColumns) (len $model.MutatorColumns))}}*len(models), {{len $model.UpdateResultColumns}}*len(models))
+		q := {{$.AdvPgPkg}}.NewQueryBuilderCap(sqlUpdateMultiHead{{$model.GoName}}, {{add (len $model.PrimaryKeyColumns) (add (len $model.UpdateValueColumns) (len $model.MutatorColumns))}}*len(models), {{if $model.UpdateResultColumns}}{{len $model.UpdateResultColumns}}*len(models){{else}}0{{end}})
 
 		for i, model := range models {
 			if i == 0 {
@@ -585,7 +580,11 @@ func (dao {{$model.DAO}}) Insert(ctx context.Context, data *{{$model.RecordType}
 					q.AppendPlaceholder()
 					q.AppendArgs(model.mut{{to_upper_camel $col.GoName}})
 				{{- else -}}
-					q.AppendPlaceholder()
+					{{ if $col.SQLValue -}}
+						q.AppendSQL(strings.ReplaceAll({{quote $col.SQLValue}}, "%s", q.Placeholder()))
+					{{ else -}}
+						q.AppendPlaceholder()
+					{{ end -}}
 					q.AppendArgs({{$col.GoExpr}})
 				{{- end }}
 			{{ end -}}
@@ -634,7 +633,7 @@ func (dao {{$model.DAO}}) Insert(ctx context.Context, data *{{$model.RecordType}
 			_, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
 		{{- end }}
 
-		{{ if not $model.DisableActiveRecord -}}
+		{{ if and (not $model.DisableActiveRecord) (or $model.UpdateValueColumns $model.MutatorColumns) -}}
 			if err == nil {
 				for i := range records {
 					records[i].reset()
@@ -676,19 +675,21 @@ func (dao {{$model.DAO}}) Insert(ctx context.Context, data *{{$model.RecordType}
 		ctx = {{$.AdvPgConnPkg}}.QueryInfoCtx(ctx, {{quote $model.Table.Table}}, "")
 		q := data.queryFullUpdate()
 		{{ if $model.UpdateResultColumns -}}
-			return dao.db.QueryRow(ctx, q.SQL(), q.Args()...).Scan(q.Results()...)
+			err := dao.db.QueryRow(ctx, q.SQL(), q.Args()...).Scan(q.Results()...)
 		{{- else -}}
 			ct, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
-			if err != nil {
-				return err
+			if err == nil && ct.RowsAffected() == 0 {
+				err = sql.ErrNoRows
 			}
-
-			if ct.RowsAffected() == 0 {
-				return sql.ErrNoRows
-			}
-
-			return nil
 		{{- end }}
+
+		{{ if and (not $model.DisableActiveRecord) (or $model.UpdateValueColumns $model.MutatorColumns) -}}
+			if err == nil {
+				data.reset()
+			}
+
+		{{ end -}}
+		return err
 	}
 {{ end -}}
 
@@ -710,8 +711,13 @@ func (dao {{$model.DAO}}) Insert(ctx context.Context, data *{{$model.RecordType}
 					q.AppendSQL(",")
 				}
 
-				q.AppendSQL(" {{$col.ColumnName}}=$")
-				q.AppendPlaceholderNum()
+				{{ if $col.SQLValue -}}
+					q.AppendSQL(" {{$col.ColumnName}}=")
+					q.AppendSQL(strings.ReplaceAll({{quote $col.SQLValue}}, "%s", q.Placeholder()))
+				{{- else -}}
+					q.AppendSQL(" {{$col.ColumnName}}=$")
+					q.AppendPlaceholderNum()
+				{{- end }}
 				q.AppendArgs({{$col.GoExpr}})
 			}
 		{{ end }}
@@ -758,6 +764,7 @@ func (dao {{$model.DAO}}) Insert(ctx context.Context, data *{{$model.RecordType}
 
 	{{ end -}}
 
+	{{ if or $model.UpdateValueColumns $model.MutatorColumns -}}
 	func (model *{{$model.RecordType}}) reset() {
 		{{ if $model.UpdateValueColumns -}}
 			model.updateMask = 0
@@ -766,6 +773,7 @@ func (dao {{$model.DAO}}) Insert(ctx context.Context, data *{{$model.RecordType}
 			model.mut{{to_upper_camel $col.GoName}} = 0
 		{{ end -}}
 	}
+	{{ end -}}
 
 	func (dao {{$model.DAO}}) Update(ctx context.Context, data *{{$model.RecordType}}) error {
 		q := 
