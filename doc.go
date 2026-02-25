@@ -172,6 +172,63 @@ Having the configuration:
 			// ...
 	    }, advpg.WithLimit(5))
 
+# Limit and Offset
+
+Generated Select methods support `LIMIT` and `OFFSET` clauses via [WithLimit]
+and [WithOffset] options, and via the [Index].DefaultLimit field.
+
+The effective limit for a Select query is resolved as follows:
+
+ 1. If the caller passes [WithLimit](N) where N > 0, the query uses `LIMIT N`.
+ 2. Otherwise, if the [Index] has DefaultLimit set to a non-zero value, that value
+    is used as the limit.
+ 3. Otherwise, no `LIMIT` clause is appended and the query returns all matching rows.
+
+[WithOffset] appends an `OFFSET N` clause when N > 0. It can be combined with
+either [WithLimit] or DefaultLimit.
+
+`LIMIT` and `OFFSET` are only applied to Select queries (not to Delete queries
+generated for the same index).
+
+Example — declaring a default limit on an index:
+
+	var _ = advpg.Table{
+		Model: UserOptions{},
+		Table: "user_options",
+		Indices: []advpg.Index{{
+			Keys:         []string{"user_id"},
+			DefaultLimit: 50,
+			Order: []advpg.Order{{
+				Field: "option_id",
+			}},
+		}},
+	}
+
+With the index above, calling SelectByUserID without options appends `LIMIT 50`:
+
+	results, err := dao.SelectByUserID(ctx, userID)
+	// SELECT ... WHERE user_id=$1 ORDER BY option_id LIMIT 50
+
+Passing [WithLimit] overrides the default:
+
+	results, err := dao.SelectByUserID(ctx, userID, advpg.WithLimit(10))
+	// SELECT ... WHERE user_id=$1 ORDER BY option_id LIMIT 10
+
+Adding [WithOffset] for pagination:
+
+	results, err := dao.SelectByUserID(ctx, userID,
+		advpg.WithLimit(10), advpg.WithOffset(20))
+	// SELECT ... WHERE user_id=$1 ORDER BY option_id LIMIT 10 OFFSET 20
+
+For indices without DefaultLimit, no `LIMIT` is applied unless [WithLimit] is
+passed explicitly:
+
+	results, err := dao.SelectByName(ctx, name)
+	// SELECT ... WHERE name=$1  (no LIMIT)
+
+	results, err := dao.SelectByName(ctx, name, advpg.WithLimit(5))
+	// SELECT ... WHERE name=$1 LIMIT 5
+
 # Delete
 
 The delete operation is represented by index-based and record-based methods.
