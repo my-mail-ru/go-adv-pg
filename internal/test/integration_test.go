@@ -1359,6 +1359,7 @@ func (s *slowDB) Exec(ctx context.Context, query string, args ...any) (pgconn.Co
 func TestEnableLock(t *testing.T) {
 	ctx, db, _ := connectDB(t)
 	userDAO := NewUserDAO(db)
+	lockDAO := NewLockableUserDAO(db)
 
 	t.Run("getter blocked during Update", func(t *testing.T) {
 		// Insert a user via the real DB.
@@ -1367,7 +1368,8 @@ func TestEnableLock(t *testing.T) {
 
 		// Build a LockableUserRecord from the same row.
 		rec := LockableUser{ID: user.ID(), Name: user.Name(), Type: user.Type()}.Record()
-		rec.SetName("updated name")
+		const updatedName = "updated name"
+		rec.SetName(updatedName)
 
 		slow := &slowDB{db: db, started: make(chan struct{}), proceed: make(chan struct{})}
 		slowDAO := NewLockableUserDAO(slow)
@@ -1405,11 +1407,18 @@ func TestEnableLock(t *testing.T) {
 		// Now the getter must complete.
 		select {
 		case name := <-getterDone:
-			if name != "updated name" {
-				t.Fatalf("getter returned %q, want %q", name, "updated name")
+			if name != updatedName {
+				t.Fatalf("getter returned %q, want %q", name, updatedName)
 			}
 		case <-time.After(time.Second):
 			t.Fatal("getter still blocked after Update finished")
+		}
+
+		// Verify the update was persisted.
+		got, err := lockDAO.SelectByID(ctx, rec.ID())
+		must(t, err)
+		if got.Name() != updatedName {
+			t.Fatalf("SelectByID after Update: Name=%q, want %q", got.Name(), updatedName)
 		}
 	})
 
@@ -1459,6 +1468,18 @@ func TestEnableLock(t *testing.T) {
 		case <-time.After(time.Second):
 			t.Fatal("getter still blocked after InsertMulti finished")
 		}
+
+		// Verify both inserts were persisted and IDs assigned.
+		for i := range users {
+			if users[i].ID() == 0 {
+				t.Fatalf("users[%d].ID not assigned by InsertMulti", i)
+			}
+			got, err := lockDAO.SelectByID(ctx, users[i].ID())
+			must(t, err)
+			if got.Name() != users[i].Name() {
+				t.Fatalf("SelectByID after InsertMulti: users[%d].Name=%q, want %q", i, got.Name(), users[i].Name())
+			}
+		}
 	})
 
 	t.Run("setter blocked during Delete", func(t *testing.T) {
@@ -1505,6 +1526,12 @@ func TestEnableLock(t *testing.T) {
 			// Setter completed after Delete released the lock.
 		case <-time.After(time.Second):
 			t.Fatal("setter still blocked after Delete finished")
+		}
+
+		// Verify the delete was persisted.
+		_, err := lockDAO.SelectByID(ctx, rec.ID())
+		if !errors.Is(err, sql.ErrNoRows) {
+			t.Fatalf("SelectByID after Delete: got %v, want sql.ErrNoRows", err)
 		}
 	})
 }
