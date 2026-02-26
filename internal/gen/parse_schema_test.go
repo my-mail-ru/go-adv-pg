@@ -350,6 +350,7 @@ var NoActiveRecordTable = &advpg.Table{
 		Field:           "updated_at",
 		InitByStorage:   true,
 		UpdateByStorage: true,
+		SQLScan:         "EXTRACT(EPOCH FROM %s)::bigint",
 	}, {
 		Field:    "descr",
 		SQLScan:  "COALESCE(descr, 'default')",

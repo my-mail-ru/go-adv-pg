@@ -354,6 +354,7 @@ func TestParse(t *testing.T) {
 			"queryDeleteNoActiveRecordByPK(inID int)",
 			"queryInsert()",
 			"queryFullUpdate()",
+			"EXTRACT(EPOCH FROM test_table.updated_at)::bigint",
 		},
 		mustNot: []string{
 			"//go:generate",
