@@ -245,6 +245,12 @@ func TestParse(t *testing.T) {
 		name:    "no models",
 		wantErr: "no Table is declared in file",
 	}, {
+		name: "dot-import",
+		transformSrc: func(src []byte) []byte {
+			return bytes.Replace(src, []byte("advpg \""), []byte(". \""), 1)
+		},
+		wantErr: "dot-imports are not supported",
+	}, {
 		name:    "incorrect var declaration",
 		wantErr: "validation failed",
 	}, {

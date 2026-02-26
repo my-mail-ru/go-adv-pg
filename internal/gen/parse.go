@@ -199,12 +199,20 @@ func (f *File) processImports(fset FileSet, imports []*ast.ImportSpec) error {
 		}
 
 		pkgName := ""
+
 		if imp.Name != nil && imp.Name.Name != "_" {
+			// Dot-imports are not supported because their use is strongly
+			// discouraged in most cases, especially in database models where
+			// they can cause confusing name collisions and break code generation.
+			if imp.Name.Name == "." {
+				return fmt.Errorf("adv-pg: %s: dot-imports are not supported", fset.Pos(imp))
+			}
+
 			pkgName = imp.Name.Name
 		}
 
 		f.Imports[i] = ImportSpec{
-			PkgName: pkgName, // TODO support dot-imports
+			PkgName: pkgName,
 			PkgPath: imp.Path.Value,
 		}
 

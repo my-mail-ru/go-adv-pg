@@ -17,6 +17,8 @@ var _ = `
 
 //adv:pg:test: no models
 
+//adv:pg:test: dot-import
+
 //adv:pg:test: incorrect var declaration
 
 var _ = advpg.Table{}
