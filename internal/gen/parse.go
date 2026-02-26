@@ -284,6 +284,10 @@ func (f *File) fillModels(pkgInfo Package) (err error) {
 			return fmt.Errorf("adv-pg: %s: UpdateOnConflict and OnConflictDoNothing require a primary key", model.GoName)
 		}
 
+		if model.EnableLock && model.DisableActiveRecord {
+			return fmt.Errorf("adv-pg: %s: EnableLock requires ActiveRecord but it is disabled for the table", model.GoName)
+		}
+
 		if model.UpdateOnConflict && len(model.UpdateValueColumns) == 0 && len(model.MutatorColumns) == 0 {
 			model.UpdateOnConflict = false
 			model.OnConflictDoNothing = true

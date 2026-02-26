@@ -200,6 +200,9 @@ const (
 		{{- range $col := $model.MutatorColumns }}
 			mut{{to_upper_camel $col.GoName}} {{$col.GoType}}
 		{{ end -}}
+		{{- if $model.EnableLock }}
+			mu sync.RWMutex
+		{{- end }}
 	}
 
 	func (data {{$model.GoName}}) Record() *{{$model.RecordType}} {
@@ -207,12 +210,20 @@ const (
 	}
 	{{ range $col := $model.Columns }}
 		func (model *{{$model.RecordType}}) {{to_upper_camel $col.GoName}}() {{$col.GoType}} {
+			{{- if $model.EnableLock }}
+				model.mu.RLock()
+				defer model.mu.RUnlock()
+			{{- end }}
 			return {{$col.GoExpr}}
 		}
 	{{ end }}
 
 	{{- range $i, $col := $model.IterateSetterColumns }}
 		func (model *{{$model.RecordType}}) Set{{to_upper_camel $col.GoName}}(x {{$col.GoType}}) {
+			{{- if $model.EnableLock }}
+				model.mu.Lock()
+				defer model.mu.Unlock()
+			{{- end }}
 			{{$col.GoExpr}} = x
 			{{ if ge $i 0 -}}
 				model.updateMask |= {{shl $i}}
@@ -222,14 +233,26 @@ const (
 
 	{{- range $col := $model.MutatorColumns }}
 		func (model *{{$model.RecordType}}) Inc{{to_upper_camel $col.GoName}}() {
+			{{- if $model.EnableLock }}
+				model.mu.Lock()
+				defer model.mu.Unlock()
+			{{- end }}
 			model.mut{{to_upper_camel $col.GoName}}++
 		}
 
 		func (model *{{$model.RecordType}}) Dec{{to_upper_camel $col.GoName}}() {
+			{{- if $model.EnableLock }}
+				model.mu.Lock()
+				defer model.mu.Unlock()
+			{{- end }}
 			model.mut{{to_upper_camel $col.GoName}}--
 		}
 
 		func (model *{{$model.RecordType}}) Add{{to_upper_camel $col.GoName}}(x {{$col.GoType}}) {
+			{{- if $model.EnableLock }}
+				model.mu.Lock()
+				defer model.mu.Unlock()
+			{{- end }}
 			model.mut{{to_upper_camel $col.GoName}} += x
 		}
 	{{ end }}
@@ -489,6 +512,10 @@ func (model *{{$model.RecordType}}) queryInsert() *{{$.AdvPgPkg}}.SimpleQuery {
 }
 
 func (dao {{$model.DAO}}) Insert(ctx context.Context, data *{{$model.RecordType}}) error {
+	{{- if $model.EnableLock }}
+		data.mu.Lock()
+		defer data.mu.Unlock()
+	{{- end }}
 	ctx = {{$.AdvPgConnPkg}}.QueryInfoCtx(ctx, {{quote $model.Table.Table}}, "")
 	q := data.queryInsert()
 	{{ if $model.InsertResultColumns -}}
@@ -549,6 +576,16 @@ func (dao {{$model.DAO}}) Insert(ctx context.Context, data *{{$model.RecordType}
 	}
 
 	func (dao {{$model.DAO}}) InsertMulti(ctx context.Context, records []{{$model.RecordType}}) error {
+		{{- if $model.EnableLock }}
+			for i := range records {
+				records[i].mu.Lock()
+			}
+			defer func() {
+				for i := range records {
+					records[i].mu.Unlock()
+				}
+			}()
+		{{- end }}
 		ctx = {{$.AdvPgConnPkg}}.QueryInfoCtx(ctx, {{quote $model.Table.Table}}, "")
 		q := queryInsertMulti{{$model.GoName}}(records)
 		{{ if $model.InsertResultColumns -}}
@@ -642,6 +679,16 @@ func (dao {{$model.DAO}}) Insert(ctx context.Context, data *{{$model.RecordType}
 	}
 
 	func (dao {{$model.DAO}}) UpdateMulti(ctx context.Context, records []{{$model.RecordType}}) error {
+		{{- if $model.EnableLock }}
+			for i := range records {
+				records[i].mu.Lock()
+			}
+			defer func() {
+				for i := range records {
+					records[i].mu.Unlock()
+				}
+			}()
+		{{- end }}
 		ctx = {{$.AdvPgConnPkg}}.QueryInfoCtx(ctx, {{quote $model.Table.Table}}, "")
 		q := queryUpdateMulti{{$model.GoName}}(records)
 		{{ if $model.UpdateResultColumns -}}
@@ -713,6 +760,10 @@ func (dao {{$model.DAO}}) Insert(ctx context.Context, data *{{$model.RecordType}
 	}
 
 	func (dao {{$model.DAO}}) FullUpdate(ctx context.Context, data *{{$model.RecordType}}) error {
+		{{- if $model.EnableLock }}
+			data.mu.Lock()
+			defer data.mu.Unlock()
+		{{- end }}
 		ctx = {{$.AdvPgConnPkg}}.QueryInfoCtx(ctx, {{quote $model.Table.Table}}, "")
 		q := data.queryFullUpdate()
 		{{ if $model.UpdateResultColumns -}}
@@ -817,7 +868,11 @@ func (dao {{$model.DAO}}) Insert(ctx context.Context, data *{{$model.RecordType}
 	{{ end -}}
 
 	func (dao {{$model.DAO}}) Update(ctx context.Context, data *{{$model.RecordType}}) error {
-		q := 
+		{{- if $model.EnableLock }}
+			data.mu.Lock()
+			defer data.mu.Unlock()
+		{{- end }}
+		q :=
 		{{- if $model.MutatorColumns -}}
 			{{$.AdvPgPkg}}.Query(data.queryUpdate())
 		{{- else -}}
@@ -869,6 +924,10 @@ func (dao {{$model.DAO}}) Insert(ctx context.Context, data *{{$model.RecordType}
 	}
 
 	func (dao {{$model.DAO}}) Delete(ctx context.Context, data *{{$model.RecordType}}) error {
+		{{- if $model.EnableLock }}
+			data.mu.RLock()
+			defer data.mu.RUnlock()
+		{{- end }}
 		ctx = {{$.AdvPgConnPkg}}.QueryInfoCtx(ctx, {{quote $model.Table.Table}}, "")
 		q := data.queryDelete()
 		ct, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
@@ -924,6 +983,16 @@ func (dao {{$model.DAO}}) Insert(ctx context.Context, data *{{$model.RecordType}
 			return nil
 		}
 
+		{{- if $model.EnableLock }}
+			for i := range records {
+				records[i].mu.RLock()
+			}
+			defer func() {
+				for i := range records {
+					records[i].mu.RUnlock()
+				}
+			}()
+		{{- end }}
 		ctx = {{$.AdvPgConnPkg}}.QueryInfoCtx(ctx, {{quote $model.Table.Table}}, "")
 		q := queryDeleteMulti{{$model.GoName}}(records)
 		_, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)

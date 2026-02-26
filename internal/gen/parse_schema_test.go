@@ -487,6 +487,7 @@ var ActiveRecordEnabledTable = &advpg.Table{
 	Table:            "test_table",
 	DAO:              "DAOInOtherFile",
 	UpdateOnConflict: true,
+	EnableLock:       true,
 	Indices: []advpg.Index{{
 		Keys:         []string{"ID"},
 		IsPrimaryKey: true,
@@ -514,6 +515,18 @@ var ActiveRecordEnabledTable = &advpg.Table{
 		Field:          "Counter",
 		EnableMutators: true,
 	}},
+}
+
+//adv:pg:test: EnableLock with DisableActiveRecord
+
+type EnableLockNoActiveRecord struct {
+	ID int
+}
+
+var _ = advpg.Table{
+	Model:               EnableLockNoActiveRecord{},
+	EnableLock:          true,
+	DisableActiveRecord: true,
 }
 
 //adv:pg:test: implicit model

@@ -299,6 +299,9 @@ func TestParse(t *testing.T) {
 		name:    "conflicting Selector and Deleter",
 		wantErr: "method name SelectByID is already used for index",
 	}, {
+		name:    "EnableLock with DisableActiveRecord",
+		wantErr: "EnableLock requires ActiveRecord",
+	}, {
 		name:    "mutators are used when the ActiveRecord is disabled",
 		wantErr: "mutators require ActiveRecord but it is disabled for the table",
 	}, {
@@ -549,6 +552,11 @@ func TestParse(t *testing.T) {
 			"CreatedAt()",
 			"querySelectMutators",
 			"Record()",
+			"mu sync.RWMutex",
+			"model.mu.RLock()",
+			"model.mu.Lock()",
+			"data.mu.Lock()",
+			"data.mu.RLock()",
 		},
 		mustNot: []string{
 			"SetCreatedAt",

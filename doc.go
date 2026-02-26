@@ -363,6 +363,20 @@ Mutator methods are:
   - DecFieldName - decrements the mutator counter inside the Record struct by 1,
   - AddFieldName(x int) - adds x (possibly negative) to the mutator counter inside the Record struct.
 
+# Concurrency (EnableLock)
+
+When EnableLock is set to true in a [Table] definition, a [sync.RWMutex] is embedded in the
+generated Record struct, enabling safe concurrent access to a single Record from multiple goroutines.
+
+Getters acquire RLock; setters and mutators acquire Lock. DAO methods (Insert, Update, FullUpdate,
+Delete, and their Multi variants) hold the lock for the entire operation including the database I/O,
+so the lock may be held for a long time.
+
+Compound values (slices, maps, pointers) stored in the model struct can be modified without going
+through a setter, bypassing the lock.
+
+EnableLock requires [ActiveRecord] — without it, no Record struct exists to hold the mutex.
+
 [ActiveRecord]: https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-ActiveRecord
 [Select]: https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-Select
 [Delete]: https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-Delete
