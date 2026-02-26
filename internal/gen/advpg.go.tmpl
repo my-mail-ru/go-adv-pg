@@ -430,7 +430,10 @@ func (*{{$model.RecordType}}) Table() string {
 
 		{{- if $idx.Selector -}}
 			func (dao {{$model.DAO}}) {{$idx.Selector}}(ctx context.Context, {{ template "query_method_args" $model.IterateIndexKeys $idx }}, optFuncs ...{{$.AdvPgPkg}}.SelectOptionFunc) (
-				{{- if not $idx.IsUniq -}} [] {{- end -}}
+				{{- if $idx.IsUniq -}}
+					{{- if $model.EnableLock }} *{{- end -}}
+				{{- else -}} []
+				{{- end -}}
 			{{$model.RecordType}}, error) {
 				var data {{$model.RecordType}}
 				ctx = {{$.AdvPgConnPkg}}.QueryInfoCtx(ctx, {{quote $model.Table.Table}},  {{quote $idx.Name}})
@@ -448,7 +451,7 @@ func (*{{$model.RecordType}}) Table() string {
 					row := db.QueryRow(ctx, q.SQL(), q.Args()...)
 					err := row.Scan(q.Results()...)
 
-					return data, err
+					return {{ if $model.EnableLock }}&{{ end }}data, err
 				{{- else }}
 
 					rows, err := db.Query(ctx, q.SQL(), q.Args()...)
@@ -546,7 +549,12 @@ func (dao {{$model.DAO}}) Insert(ctx context.Context, data *{{$model.RecordType}
 
 		q := {{$.AdvPgPkg}}.NewQueryBuilderCap(sqlInsertHead{{$model.GoName}}, {{len $model.InsertValueColumns}}*len(models), {{if $model.InsertResultColumns}}{{len $model.InsertResultColumns}}*len(models){{else}}0{{end}})
 
-		for i, model := range models {
+		for i := range models {
+			{{- if $model.EnableLock }}
+			model := &models[i]
+			{{- else }}
+			model := models[i]
+			{{- end }}
 			if i == 0 {
 				q.AppendSQL("(")
 			} else {
@@ -641,7 +649,12 @@ func (dao {{$model.DAO}}) Insert(ctx context.Context, data *{{$model.RecordType}
 
 		q := {{$.AdvPgPkg}}.NewQueryBuilderCap(sqlUpdateMultiHead{{$model.GoName}}, {{add (len $model.PrimaryKeyColumns) (add (len $model.UpdateValueColumns) (len $model.MutatorColumns))}}*len(models), {{if $model.UpdateResultColumns}}{{len $model.UpdateResultColumns}}*len(models){{else}}0{{end}})
 
-		for i, model := range models {
+		for i := range models {
+			{{- if $model.EnableLock }}
+			model := &models[i]
+			{{- else }}
+			model := models[i]
+			{{- end }}
 			if i == 0 {
 				q.AppendSQL("(")
 			} else {
@@ -949,7 +962,12 @@ func (dao {{$model.DAO}}) Insert(ctx context.Context, data *{{$model.RecordType}
 
 		q := {{$.AdvPgPkg}}.NewQueryBuilder(sqlDeleteMultiHead{{$model.GoName}})
 
-		for i, model := range models {
+		for i := range models {
+			{{- if $model.EnableLock }}
+			model := &models[i]
+			{{- else }}
+			model := models[i]
+			{{- end }}
 			{{- if eq (len $model.PrimaryKeyColumns) 1 }}
 				if i > 0 {
 					q.AppendSQL(",")

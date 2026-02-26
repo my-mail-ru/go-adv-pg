@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	advpg "github.com/my-mail-ru/go-adv-pg"
@@ -258,7 +259,8 @@ func queryUpdateMultiExtLink(models []ExtLinkRecord) *advpg.QueryBuilder {
 
 	q := advpg.NewQueryBuilderCap(sqlUpdateMultiHeadExtLink, 5*len(models), 2*len(models))
 
-	for i, model := range models {
+	for i := range models {
+		model := models[i]
 		if i == 0 {
 			q.AppendSQL("(")
 		} else {
@@ -457,7 +459,8 @@ func queryDeleteMultiExtLink(models []ExtLinkRecord) *advpg.QueryBuilder {
 
 	q := advpg.NewQueryBuilder(sqlDeleteMultiHeadExtLink)
 
-	for i, model := range models {
+	for i := range models {
+		model := models[i]
 		if i == 0 {
 			q.AppendSQL("(")
 		} else {
@@ -480,9 +483,423 @@ func (dao ExtLinkDAO) DeleteMulti(ctx context.Context, records []ExtLinkRecord) 
 	if len(records) == 0 {
 		return nil
 	}
-
 	ctx = advpgconn.QueryInfoCtx(ctx, "ext_links", "")
 	q := queryDeleteMultiExtLink(records)
+	_, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
+	return err
+}
+
+//// LockableUser ////
+
+const (
+	sqlSelectLockableUser          = `SELECT id, name, type FROM users`
+	sqlInsertHeadLockableUser      = `INSERT INTO users (name, type) VALUES `
+	sqlInsertTailLockableUser      = ` RETURNING id`
+	sqlInsertLockableUser          = sqlInsertHeadLockableUser + `($1, $2)` + sqlInsertTailLockableUser
+	sqlFullUpdateLockableUser      = `UPDATE users SET name=$1, type=$2`
+	sqlUpdateMultiHeadLockableUser = `UPDATE users SET name=(t::users).name, type=(t::users).type FROM (VALUES `
+	sqlUpdateMultiTailLockableUser = `) t WHERE users.id=(t::users).id`
+	sqlDeleteLockableUser          = `DELETE FROM users WHERE id=$1`
+	sqlDeleteMultiHeadLockableUser = `DELETE FROM users WHERE id IN (`
+)
+
+type LockableUserRecord struct {
+	updateMask uint64
+	data       LockableUser
+	mu         sync.RWMutex
+}
+
+func (data LockableUser) Record() *LockableUserRecord {
+	return &LockableUserRecord{data: data}
+}
+
+func (model *LockableUserRecord) ID() int {
+	model.mu.RLock()
+	defer model.mu.RUnlock()
+	return model.data.ID
+}
+
+func (model *LockableUserRecord) Name() string {
+	model.mu.RLock()
+	defer model.mu.RUnlock()
+	return model.data.Name
+}
+
+func (model *LockableUserRecord) Type() int {
+	model.mu.RLock()
+	defer model.mu.RUnlock()
+	return model.data.Type
+}
+
+func (model *LockableUserRecord) SetName(x string) {
+	model.mu.Lock()
+	defer model.mu.Unlock()
+	model.data.Name = x
+	model.updateMask |= 1
+}
+
+func (model *LockableUserRecord) SetType(x int) {
+	model.mu.Lock()
+	defer model.mu.Unlock()
+	model.data.Type = x
+	model.updateMask |= 2
+}
+
+func (*LockableUserRecord) Table() string {
+	return "users"
+}
+
+type LockableUserDAO struct {
+	db advpg.DB
+}
+
+func NewLockableUserDAO(db advpg.DB) LockableUserDAO {
+	return LockableUserDAO{db: db}
+}
+
+func (model *LockableUserRecord) querySelectByID(inID int, limit, offset uint) *advpg.SimpleQuery {
+	sql := sqlSelectLockableUser + ` WHERE id=$1`
+	if limit > 0 {
+		sql += " LIMIT " + strconv.FormatUint(uint64(limit), 10)
+	}
+	if offset > 0 {
+		sql += " OFFSET " + strconv.FormatUint(uint64(offset), 10)
+	}
+	return advpg.NewSimpleQuery(
+		sql,
+		[]any{inID},
+		[]any{&model.data.ID, &model.data.Name, &model.data.Type},
+	)
+}
+
+func (model *LockableUserRecord) queryDeleteByID(inID int) *advpg.SimpleQuery {
+	return advpg.NewSimpleQuery(
+		`DELETE FROM users WHERE id=$1`,
+		[]any{inID},
+		nil,
+	)
+}
+
+func (dao LockableUserDAO) SelectByID(ctx context.Context, inID int, optFuncs ...advpg.SelectOptionFunc) (*LockableUserRecord, error) {
+	var data LockableUserRecord
+	ctx = advpgconn.QueryInfoCtx(ctx, "users", "ID")
+	opt := advpg.NewSelectOptions(optFuncs...)
+	limit := opt.Limit()
+	q := data.querySelectByID(inID, limit, opt.Offset())
+	db := advpgconn.ReplicaByOpt(dao.db, opt, "users")
+	row := db.QueryRow(ctx, q.SQL(), q.Args()...)
+	err := row.Scan(q.Results()...)
+
+	return &data, err
+}
+
+func (dao LockableUserDAO) DeleteByID(ctx context.Context, inID int) error {
+	ctx = advpgconn.QueryInfoCtx(ctx, "users", "ID")
+	q := (*LockableUserRecord)(nil).queryDeleteByID(inID)
+	ct, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
+	if err != nil {
+		return err
+	}
+
+	if ct.RowsAffected() == 0 {
+		return sql.ErrNoRows
+	}
+
+	return nil
+}
+
+func (model *LockableUserRecord) queryInsert() *advpg.SimpleQuery {
+	return advpg.NewSimpleQuery(
+		sqlInsertLockableUser,
+		[]any{model.data.Name, model.data.Type},
+		[]any{&model.data.ID},
+	)
+}
+
+func (dao LockableUserDAO) Insert(ctx context.Context, data *LockableUserRecord) error {
+	data.mu.Lock()
+	defer data.mu.Unlock()
+	ctx = advpgconn.QueryInfoCtx(ctx, "users", "")
+	q := data.queryInsert()
+	err := dao.db.QueryRow(ctx, q.SQL(), q.Args()...).Scan(q.Results()...)
+
+	if err == nil {
+		data.reset()
+	}
+
+	return err
+}
+
+func queryInsertMultiLockableUser(models []LockableUserRecord) *advpg.QueryBuilder {
+	if len(models) == 0 {
+		return &advpg.QueryBuilder{}
+	}
+
+	q := advpg.NewQueryBuilderCap(sqlInsertHeadLockableUser, 2*len(models), 1*len(models))
+
+	for i := range models {
+		model := &models[i]
+		if i == 0 {
+			q.AppendSQL("(")
+		} else {
+			q.AppendSQL(",(")
+		}
+
+		q.AppendPlaceholder()
+		q.AppendArgs(model.data.Name)
+		q.AppendSQL(",")
+
+		q.AppendPlaceholder()
+		q.AppendArgs(model.data.Type)
+		q.AppendSQL(")")
+
+		q.AppendResults(&models[i].data.ID)
+	}
+
+	q.AppendSQL(sqlInsertTailLockableUser)
+
+	return q
+}
+
+func (dao LockableUserDAO) InsertMulti(ctx context.Context, records []LockableUserRecord) error {
+	for i := range records {
+		records[i].mu.Lock()
+	}
+	defer func() {
+		for i := range records {
+			records[i].mu.Unlock()
+		}
+	}()
+	ctx = advpgconn.QueryInfoCtx(ctx, "users", "")
+	q := queryInsertMultiLockableUser(records)
+	rows, err := dao.db.Query(ctx, q.SQL(), q.Args()...)
+	defer rows.Close()
+
+	if err == nil {
+		results := q.Results()
+		from := 0
+		to := 1
+
+		for rows.Next() {
+			if err = rows.Scan(results[from:to]...); err != nil {
+				break
+			}
+
+			from = to
+			to += 1
+		}
+
+		if err == nil {
+			err = rows.Err()
+		}
+
+		if from < len(results) {
+			err = fmt.Errorf("LockableUserDAO.InsertMulti: got %d records, but %d was expected", from/1, len(results)/1)
+		}
+	}
+
+	if err == nil {
+		for i := range records {
+			records[i].reset()
+		}
+	}
+
+	return err
+}
+
+func queryUpdateMultiLockableUser(models []LockableUserRecord) *advpg.QueryBuilder {
+	if len(models) == 0 {
+		return &advpg.QueryBuilder{}
+	}
+
+	q := advpg.NewQueryBuilderCap(sqlUpdateMultiHeadLockableUser, 3*len(models), 0)
+
+	for i := range models {
+		model := &models[i]
+		if i == 0 {
+			q.AppendSQL("(")
+		} else {
+			q.AppendSQL(",(")
+		}
+
+		q.AppendPlaceholder()
+		q.AppendArgs(model.data.ID)
+		q.AppendSQL(",")
+		q.AppendPlaceholder()
+		q.AppendArgs(model.data.Name)
+		q.AppendSQL(",")
+		q.AppendPlaceholder()
+		q.AppendArgs(model.data.Type)
+		q.AppendSQL(")")
+
+	}
+
+	q.AppendSQL(sqlUpdateMultiTailLockableUser)
+
+	return q
+}
+
+func (dao LockableUserDAO) UpdateMulti(ctx context.Context, records []LockableUserRecord) error {
+	for i := range records {
+		records[i].mu.Lock()
+	}
+	defer func() {
+		for i := range records {
+			records[i].mu.Unlock()
+		}
+	}()
+	ctx = advpgconn.QueryInfoCtx(ctx, "users", "")
+	q := queryUpdateMultiLockableUser(records)
+	_, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
+
+	if err == nil {
+		for i := range records {
+			records[i].reset()
+		}
+	}
+
+	return err
+}
+
+func (model *LockableUserRecord) queryFullUpdate() *advpg.SimpleQuery {
+	return advpg.NewSimpleQuery(
+		sqlFullUpdateLockableUser+" WHERE id=$3",
+		[]any{model.data.Name, model.data.Type, model.data.ID},
+		[]any{},
+	)
+}
+
+func (dao LockableUserDAO) FullUpdate(ctx context.Context, data *LockableUserRecord) error {
+	data.mu.Lock()
+	defer data.mu.Unlock()
+	ctx = advpgconn.QueryInfoCtx(ctx, "users", "")
+	q := data.queryFullUpdate()
+	ct, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
+	if err == nil && ct.RowsAffected() == 0 {
+		err = sql.ErrNoRows
+	}
+
+	if err == nil {
+		data.reset()
+	}
+
+	return err
+}
+
+func (model *LockableUserRecord) queryUpdate() *advpg.QueryBuilder {
+	if model.updateMask == 0 {
+		return &advpg.QueryBuilder{}
+	}
+
+	q := advpg.NewQueryBuilder(`UPDATE users SET`)
+	if model.updateMask&1 != 0 {
+		if len(q.Args()) != 0 {
+			q.AppendSQL(",")
+		}
+
+		q.AppendSQL(" name=$")
+		q.AppendPlaceholderNum()
+		q.AppendArgs(model.data.Name)
+	}
+	if model.updateMask&2 != 0 {
+		if len(q.Args()) != 0 {
+			q.AppendSQL(",")
+		}
+
+		q.AppendSQL(" type=$")
+		q.AppendPlaceholderNum()
+		q.AppendArgs(model.data.Type)
+	}
+	q.AppendSQL(` WHERE id=$`)
+	q.AppendPlaceholderNum()
+	q.AppendArgs(model.data.ID)
+
+	return q
+}
+
+func (model *LockableUserRecord) reset() {
+	model.updateMask = 0
+}
+func (dao LockableUserDAO) Update(ctx context.Context, data *LockableUserRecord) error {
+	data.mu.Lock()
+	defer data.mu.Unlock()
+	q := data.queryUpdate()
+	query := q.SQL()
+	if query == "" {
+		return nil
+	}
+	ctx = advpgconn.QueryInfoCtx(ctx, "users", "")
+
+	ct, err := dao.db.Exec(ctx, query, q.Args()...)
+	if err == nil && ct.RowsAffected() == 0 {
+		err = sql.ErrNoRows
+	}
+	if err == nil {
+		data.reset()
+	}
+
+	return err
+}
+func (model *LockableUserRecord) queryDelete() *advpg.SimpleQuery {
+	return advpg.NewSimpleQuery(
+		sqlDeleteLockableUser,
+		[]any{model.data.ID},
+		nil,
+	)
+}
+
+func (dao LockableUserDAO) Delete(ctx context.Context, data *LockableUserRecord) error {
+	data.mu.RLock()
+	defer data.mu.RUnlock()
+	ctx = advpgconn.QueryInfoCtx(ctx, "users", "")
+	q := data.queryDelete()
+	ct, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
+	if err != nil {
+		return err
+	}
+
+	if ct.RowsAffected() == 0 {
+		return sql.ErrNoRows
+	}
+
+	return nil
+}
+
+func queryDeleteMultiLockableUser(models []LockableUserRecord) *advpg.QueryBuilder {
+	if len(models) == 0 {
+		return &advpg.QueryBuilder{}
+	}
+
+	q := advpg.NewQueryBuilder(sqlDeleteMultiHeadLockableUser)
+
+	for i := range models {
+		model := &models[i]
+		if i > 0 {
+			q.AppendSQL(",")
+		}
+		q.AppendSQL("$")
+		q.AppendPlaceholderNum()
+		q.AppendArgs(model.data.ID)
+	}
+
+	q.AppendSQL(")")
+	return q
+}
+
+func (dao LockableUserDAO) DeleteMulti(ctx context.Context, records []LockableUserRecord) error {
+	if len(records) == 0 {
+		return nil
+	}
+	for i := range records {
+		records[i].mu.RLock()
+	}
+	defer func() {
+		for i := range records {
+			records[i].mu.RUnlock()
+		}
+	}()
+	ctx = advpgconn.QueryInfoCtx(ctx, "users", "")
+	q := queryDeleteMultiLockableUser(records)
 	_, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
 	return err
 }
@@ -625,7 +1042,8 @@ func queryInsertMultiSeen(models []SeenRecord) *advpg.QueryBuilder {
 
 	q := advpg.NewQueryBuilderCap(sqlInsertHeadSeen, 1*len(models), 1*len(models))
 
-	for i, model := range models {
+	for i := range models {
+		model := models[i]
 		if i == 0 {
 			q.AppendSQL("(")
 		} else {
@@ -686,7 +1104,8 @@ func queryUpdateMultiSeen(models []SeenRecord) *advpg.QueryBuilder {
 
 	q := advpg.NewQueryBuilderCap(sqlUpdateMultiHeadSeen, 2*len(models), 0)
 
-	for i, model := range models {
+	for i := range models {
+		model := models[i]
 		if i == 0 {
 			q.AppendSQL("(")
 		} else {
@@ -817,7 +1236,8 @@ func queryDeleteMultiSeen(models []SeenRecord) *advpg.QueryBuilder {
 
 	q := advpg.NewQueryBuilder(sqlDeleteMultiHeadSeen)
 
-	for i, model := range models {
+	for i := range models {
+		model := models[i]
 		if i > 0 {
 			q.AppendSQL(",")
 		}
@@ -834,7 +1254,6 @@ func (dao SeenDAO) DeleteMulti(ctx context.Context, records []SeenRecord) error 
 	if len(records) == 0 {
 		return nil
 	}
-
 	ctx = advpgconn.QueryInfoCtx(ctx, "seen", "")
 	q := queryDeleteMultiSeen(records)
 	_, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
@@ -1175,7 +1594,8 @@ func queryInsertMultiUser(models []UserRecord) *advpg.QueryBuilder {
 
 	q := advpg.NewQueryBuilderCap(sqlInsertHeadUser, 2*len(models), 4*len(models))
 
-	for i, model := range models {
+	for i := range models {
+		model := models[i]
 		if i == 0 {
 			q.AppendSQL("(")
 		} else {
@@ -1243,7 +1663,8 @@ func queryUpdateMultiUser(models []UserRecord) *advpg.QueryBuilder {
 
 	q := advpg.NewQueryBuilderCap(sqlUpdateMultiHeadUser, 4*len(models), 2*len(models))
 
-	for i, model := range models {
+	for i := range models {
+		model := models[i]
 		if i == 0 {
 			q.AppendSQL("(")
 		} else {
@@ -1436,7 +1857,8 @@ func queryDeleteMultiUser(models []UserRecord) *advpg.QueryBuilder {
 
 	q := advpg.NewQueryBuilder(sqlDeleteMultiHeadUser)
 
-	for i, model := range models {
+	for i := range models {
+		model := models[i]
 		if i > 0 {
 			q.AppendSQL(",")
 		}
@@ -1453,7 +1875,6 @@ func (dao UserDAO) DeleteMulti(ctx context.Context, records []UserRecord) error 
 	if len(records) == 0 {
 		return nil
 	}
-
 	ctx = advpgconn.QueryInfoCtx(ctx, "users", "")
 	q := queryDeleteMultiUser(records)
 	_, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
@@ -1672,7 +2093,8 @@ func queryInsertMultiUserOptions(models []UserOptionsRecord) *advpg.QueryBuilder
 
 	q := advpg.NewQueryBuilderCap(sqlInsertHeadUserOptions, 3*len(models), 1*len(models))
 
-	for i, model := range models {
+	for i := range models {
+		model := models[i]
 		if i == 0 {
 			q.AppendSQL("(")
 		} else {
@@ -1744,7 +2166,8 @@ func queryUpdateMultiUserOptions(models []UserOptionsRecord) *advpg.QueryBuilder
 
 	q := advpg.NewQueryBuilderCap(sqlUpdateMultiHeadUserOptions, 4*len(models), 0)
 
-	for i, model := range models {
+	for i := range models {
+		model := models[i]
 		if i == 0 {
 			q.AppendSQL("(")
 		} else {
@@ -1893,7 +2316,8 @@ func queryDeleteMultiUserOptions(models []UserOptionsRecord) *advpg.QueryBuilder
 
 	q := advpg.NewQueryBuilder(sqlDeleteMultiHeadUserOptions)
 
-	for i, model := range models {
+	for i := range models {
+		model := models[i]
 		if i == 0 {
 			q.AppendSQL("(")
 		} else {
@@ -1916,7 +2340,6 @@ func (dao UserOptionsDAO) DeleteMulti(ctx context.Context, records []UserOptions
 	if len(records) == 0 {
 		return nil
 	}
-
 	ctx = advpgconn.QueryInfoCtx(ctx, "user_options", "")
 	q := queryDeleteMultiUserOptions(records)
 	_, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)
@@ -2137,7 +2560,8 @@ func queryDeleteMultiUserViews(models []UserViewsRecord) *advpg.QueryBuilder {
 
 	q := advpg.NewQueryBuilder(sqlDeleteMultiHeadUserViews)
 
-	for i, model := range models {
+	for i := range models {
+		model := models[i]
 		if i > 0 {
 			q.AppendSQL(",")
 		}
@@ -2154,7 +2578,6 @@ func (dao UserViewsDAO) DeleteMulti(ctx context.Context, records []UserViewsReco
 	if len(records) == 0 {
 		return nil
 	}
-
 	ctx = advpgconn.QueryInfoCtx(ctx, "user_views", "")
 	q := queryDeleteMultiUserViews(records)
 	_, err := dao.db.Exec(ctx, q.SQL(), q.Args()...)

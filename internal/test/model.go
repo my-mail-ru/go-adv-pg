@@ -179,6 +179,28 @@ var _ = advpg.Table{
 	}},
 }
 
+// LockableUser is used to test EnableLock — the per-record sync.RWMutex
+// that is held during DAO operations. Reuses the "users" table.
+type LockableUser struct {
+	ID   int    `db:"id"`
+	Name string `db:"name"`
+	Type int    `db:"type"`
+}
+
+var _ = advpg.Table{
+	Model:      LockableUser{},
+	Table:      "users",
+	EnableLock: true,
+	Indices: []advpg.Index{{
+		Keys:         []string{"ID"},
+		IsPrimaryKey: true,
+	}},
+	Fields: []advpg.Field{{
+		Field:         "ID",
+		InitByStorage: true,
+	}},
+}
+
 // MyTime is an example of SQLScan and SQLValue used with [sql.Scanner] and [driver.Valuer] implementation.
 type MyTime struct {
 	time.Time

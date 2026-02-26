@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -1323,6 +1324,187 @@ func TestSelectLimitOffsetDAO(t *testing.T) {
 
 		if len(got) != 5 {
 			t.Fatalf("expected 5 records, got %d", len(got))
+		}
+	})
+}
+
+// slowDB is a single-use DB wrapper that closes `started` and blocks on
+// `proceed` before forwarding the call to the real DB. This lets tests
+// observe that the generated lock is held while a DAO method is blocked
+// on a database call.
+type slowDB struct {
+	db      advpg.DB
+	started chan struct{}
+	proceed chan struct{}
+}
+
+func (s *slowDB) Query(ctx context.Context, query string, args ...any) (pgx.Rows, error) {
+	close(s.started)
+	<-s.proceed
+	return s.db.Query(ctx, query, args...)
+}
+
+func (s *slowDB) QueryRow(ctx context.Context, query string, args ...any) pgx.Row {
+	close(s.started)
+	<-s.proceed
+	return s.db.QueryRow(ctx, query, args...)
+}
+
+func (s *slowDB) Exec(ctx context.Context, query string, args ...any) (pgconn.CommandTag, error) {
+	close(s.started)
+	<-s.proceed
+	return s.db.Exec(ctx, query, args...)
+}
+
+func TestEnableLock(t *testing.T) {
+	ctx, db, _ := connectDB(t)
+	userDAO := NewUserDAO(db)
+
+	t.Run("getter blocked during Update", func(t *testing.T) {
+		// Insert a user via the real DB.
+		user := User{Name: "LockTest Update", Type: 1}.Record()
+		must(t, userDAO.Insert(ctx, user))
+
+		// Build a LockableUserRecord from the same row.
+		rec := LockableUser{ID: user.ID(), Name: user.Name(), Type: user.Type()}.Record()
+		rec.SetName("updated name")
+
+		slow := &slowDB{db: db, started: make(chan struct{}), proceed: make(chan struct{})}
+		slowDAO := NewLockableUserDAO(slow)
+
+		// Start Update in a goroutine — it acquires Lock, then hits slowDB.Exec.
+		var updateErr error
+		var updateDone sync.WaitGroup
+		updateDone.Add(1)
+		go func() {
+			defer updateDone.Done()
+			updateErr = slowDAO.Update(ctx, rec)
+		}()
+
+		// Wait until slowDB.Exec is entered (lock is held).
+		<-slow.started
+
+		// Try to call a getter from another goroutine — needs RLock, should block.
+		getterDone := make(chan string, 1)
+		go func() {
+			getterDone <- rec.Name()
+		}()
+
+		select {
+		case <-getterDone:
+			t.Fatal("getter returned while Update held the lock — RLock should be blocked by Lock")
+		case <-time.After(100 * time.Millisecond):
+			// Expected: getter is blocked.
+		}
+
+		// Release the DB call.
+		close(slow.proceed)
+		updateDone.Wait()
+		must(t, updateErr)
+
+		// Now the getter must complete.
+		select {
+		case name := <-getterDone:
+			if name != "updated name" {
+				t.Fatalf("getter returned %q, want %q", name, "updated name")
+			}
+		case <-time.After(time.Second):
+			t.Fatal("getter still blocked after Update finished")
+		}
+	})
+
+	t.Run("getter blocked during InsertMulti", func(t *testing.T) {
+		// Create two fresh records.
+		users := []LockableUserRecord{
+			*LockableUser{Name: "LockTest Multi 0", Type: 10}.Record(),
+			*LockableUser{Name: "LockTest Multi 1", Type: 11}.Record(),
+		}
+
+		slow := &slowDB{db: db, started: make(chan struct{}), proceed: make(chan struct{})}
+		slowDAO := NewLockableUserDAO(slow)
+
+		// Start InsertMulti — locks all records, then hits slowDB.Query.
+		var insertErr error
+		var insertDone sync.WaitGroup
+		insertDone.Add(1)
+		go func() {
+			defer insertDone.Done()
+			insertErr = slowDAO.InsertMulti(ctx, users)
+		}()
+
+		<-slow.started
+
+		// Try getter on the second record — should be blocked.
+		getterDone := make(chan string, 1)
+		go func() {
+			getterDone <- users[1].Name()
+		}()
+
+		select {
+		case <-getterDone:
+			t.Fatal("getter returned while InsertMulti held the lock")
+		case <-time.After(100 * time.Millisecond):
+			// Expected: blocked.
+		}
+
+		close(slow.proceed)
+		insertDone.Wait()
+		must(t, insertErr)
+
+		select {
+		case name := <-getterDone:
+			if name != "LockTest Multi 1" {
+				t.Fatalf("getter returned %q, want %q", name, "LockTest Multi 1")
+			}
+		case <-time.After(time.Second):
+			t.Fatal("getter still blocked after InsertMulti finished")
+		}
+	})
+
+	t.Run("setter blocked during Delete", func(t *testing.T) {
+		// Insert a user via the real DB.
+		user := User{Name: "LockTest Delete", Type: 2}.Record()
+		must(t, userDAO.Insert(ctx, user))
+
+		rec := LockableUser{ID: user.ID(), Name: user.Name(), Type: user.Type()}.Record()
+
+		slow := &slowDB{db: db, started: make(chan struct{}), proceed: make(chan struct{})}
+		slowDAO := NewLockableUserDAO(slow)
+
+		// Start Delete — acquires RLock, then hits slowDB.Exec.
+		var deleteErr error
+		var deleteDone sync.WaitGroup
+		deleteDone.Add(1)
+		go func() {
+			defer deleteDone.Done()
+			deleteErr = slowDAO.Delete(ctx, rec)
+		}()
+
+		<-slow.started
+
+		// Try setter from another goroutine — needs Lock, blocked by RLock.
+		setterDone := make(chan struct{}, 1)
+		go func() {
+			rec.SetName("should block")
+			close(setterDone)
+		}()
+
+		select {
+		case <-setterDone:
+			t.Fatal("setter returned while Delete held the RLock — Lock should be blocked")
+		case <-time.After(100 * time.Millisecond):
+			// Expected: blocked.
+		}
+
+		close(slow.proceed)
+		deleteDone.Wait()
+		must(t, deleteErr)
+
+		select {
+		case <-setterDone:
+			// Setter completed after Delete released the lock.
+		case <-time.After(time.Second):
+			t.Fatal("setter still blocked after Delete finished")
 		}
 	})
 }
