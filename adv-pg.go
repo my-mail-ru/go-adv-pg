@@ -176,7 +176,9 @@ type Index struct {
 	// May not correspond to the "real" database unique index or constraint.
 	IsUniq bool
 
-	// DefaultLimit is the default limit for `SELECT` queries.
+	// DefaultLimit is the default `LIMIT` for `SELECT` queries using this index.
+	// When set, the generated selector method appends `LIMIT DefaultLimit` unless
+	// the caller provides [WithLimit]. A zero value means no limit is applied by default.
 	DefaultLimit uint
 
 	// Order specifies the `ORDER BY` clause for `SELECT queries`.
@@ -437,17 +439,19 @@ func (qb *QueryBuilder) Results() []any {
 
 // SelectOptions are intended to be used from unit tests and/or generated code. Do not use it directly.
 type SelectOptions struct {
-	limit      int
-	offset     int
+	limit      uint
+	offset     uint
 	useReplica bool
 	useMaster  bool
 }
 
-func (so *SelectOptions) Limit() int {
+// Limit returns the limit set by [WithLimit], or 0 if not set.
+func (so *SelectOptions) Limit() uint {
 	return so.limit
 }
 
-func (so *SelectOptions) Offset() int {
+// Offset returns the offset set by [WithOffset], or 0 if not set.
+func (so *SelectOptions) Offset() uint {
 	return so.offset
 }
 
@@ -462,15 +466,18 @@ func (so *SelectOptions) UseMaster() bool {
 // SelectOptionFunc represents options of Select query methods.
 type SelectOptionFunc func(*SelectOptions)
 
-// WithLimit overrides the DefaultLimit specified for an [Index].
-func WithLimit(limit int) SelectOptionFunc {
+// WithLimit sets the `LIMIT` clause for a `SELECT` query. When the index has
+// a [Index.DefaultLimit], WithLimit overrides it. A zero value is ignored and
+// the default limit (if any) is used instead.
+func WithLimit(limit uint) SelectOptionFunc {
 	return func(so *SelectOptions) {
 		so.limit = limit
 	}
 }
 
-// WithOffset specifies an offset for Select queries.
-func WithOffset(offset int) SelectOptionFunc {
+// WithOffset sets the `OFFSET` clause for a `SELECT` query.
+// A zero value means no offset is applied.
+func WithOffset(offset uint) SelectOptionFunc {
 	return func(so *SelectOptions) {
 		so.offset = offset
 	}

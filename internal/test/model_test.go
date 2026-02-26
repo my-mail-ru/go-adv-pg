@@ -228,3 +228,85 @@ func TestDeleteMulti(t *testing.T) {
 		}
 	})
 }
+
+func TestSelectLimitOffset(t *testing.T) {
+	t.Run("DefaultLimit applied", func(t *testing.T) {
+		m := UserOptions{}.Record()
+		q := m.querySelectByUserID(1, 50, 0)
+		sql := q.SQL()
+
+		if !strings.Contains(sql, "LIMIT 50") {
+			t.Error("missing LIMIT 50:", sql)
+		}
+		if strings.Contains(sql, "OFFSET") {
+			t.Error("unexpected OFFSET:", sql)
+		}
+	})
+
+	t.Run("WithLimit overrides DefaultLimit", func(t *testing.T) {
+		m := UserOptions{}.Record()
+		q := m.querySelectByUserID(1, 10, 0)
+		sql := q.SQL()
+
+		if !strings.Contains(sql, "LIMIT 10") {
+			t.Error("missing LIMIT 10:", sql)
+		}
+		if strings.Contains(sql, "LIMIT 50") {
+			t.Error("should not contain default LIMIT 50:", sql)
+		}
+	})
+
+	t.Run("WithOffset applied", func(t *testing.T) {
+		m := UserOptions{}.Record()
+		q := m.querySelectByUserID(1, 10, 5)
+		sql := q.SQL()
+
+		if !strings.Contains(sql, "LIMIT 10") {
+			t.Error("missing LIMIT 10:", sql)
+		}
+		if !strings.Contains(sql, "OFFSET 5") {
+			t.Error("missing OFFSET 5:", sql)
+		}
+	})
+
+	t.Run("no limit or offset", func(t *testing.T) {
+		m := User{}.Record()
+		q := m.querySelectByName("test", 0, 0)
+		sql := q.SQL()
+
+		if strings.Contains(sql, "LIMIT") {
+			t.Error("unexpected LIMIT:", sql)
+		}
+		if strings.Contains(sql, "OFFSET") {
+			t.Error("unexpected OFFSET:", sql)
+		}
+	})
+
+	t.Run("multi-keyset with limit and offset", func(t *testing.T) {
+		m := User{}.Record()
+		q := m.querySelectMultiByIDType([]SelectMultiByIDTypeKey{
+			{ID: 1, Type: 1},
+		}, 20, 3)
+		sql := q.SQL()
+
+		if !strings.Contains(sql, "LIMIT 20") {
+			t.Error("missing LIMIT 20:", sql)
+		}
+		if !strings.Contains(sql, "OFFSET 3") {
+			t.Error("missing OFFSET 3:", sql)
+		}
+	})
+
+	t.Run("offset only", func(t *testing.T) {
+		m := User{}.Record()
+		q := m.querySelectByName("test", 0, 10)
+		sql := q.SQL()
+
+		if strings.Contains(sql, "LIMIT") {
+			t.Error("unexpected LIMIT:", sql)
+		}
+		if !strings.Contains(sql, "OFFSET 10") {
+			t.Error("missing OFFSET 10:", sql)
+		}
+	})
+}

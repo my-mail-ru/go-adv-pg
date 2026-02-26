@@ -997,7 +997,7 @@ func TestUserOptionsDAO(t *testing.T) {
 		opts[insertMultiCount/4].SetOption("CHANGED")
 		must(t, optDAO.InsertMulti(ctx, opts))
 
-		gotOpts, err := optDAO.SelectByUserID(ctx, userID)
+		gotOpts, err := optDAO.SelectByUserID(ctx, userID, advpg.WithLimit(uint(insertMultiCount)))
 
 		must(t, err)
 		cmpSlices(t, gotOpts, opts)
@@ -1120,6 +1120,91 @@ func TestDeleteExtLinkDAO(t *testing.T) {
 			if !errors.Is(err, sql.ErrNoRows) {
 				t.Fatalf("exts[%d] should be deleted, but SelectByPrimaryKey returned: %v", i, err)
 			}
+		}
+	})
+}
+
+func TestSelectLimitOffsetDAO(t *testing.T) {
+	ctx, db, _ := connectDB(t)
+	optDAO := NewUserOptionsDAO(db)
+	userDAO := NewUserDAO(db)
+	userID := createUserID(t, db)
+
+	// Insert 10 user_options records.
+	const total = 10
+	opts := make([]UserOptionsRecord, total)
+	for i := range opts {
+		opts[i] = *(UserOptions{
+			UserID:   userID,
+			OptionID: i,
+			Flag:     i%2 != 0,
+			Option:   "opt" + strconv.Itoa(i),
+		}.Record())
+	}
+	must(t, optDAO.InsertMulti(ctx, opts))
+
+	t.Run("WithLimit", func(t *testing.T) {
+		got, err := optDAO.SelectByUserID(ctx, userID, advpg.WithLimit(3))
+		must(t, err)
+
+		if len(got) != 3 {
+			t.Fatalf("expected 3 records, got %d", len(got))
+		}
+	})
+
+	t.Run("WithLimit and WithOffset", func(t *testing.T) {
+		got, err := optDAO.SelectByUserID(ctx, userID, advpg.WithLimit(3), advpg.WithOffset(2))
+		must(t, err)
+
+		if len(got) != 3 {
+			t.Fatalf("expected 3 records, got %d", len(got))
+		}
+
+		// UserOptions has ORDER BY option_id ASC, so offset 2 should skip options 0,1.
+		if got[0].OptionID() != 2 {
+			t.Fatalf("expected first record OptionID=2 (offset 2), got %d", got[0].OptionID())
+		}
+	})
+
+	t.Run("DefaultLimit applied", func(t *testing.T) {
+		// UserOptions.UserID index has DefaultLimit: 50. With only 10 records,
+		// all should be returned (10 < 50).
+		got, err := optDAO.SelectByUserID(ctx, userID)
+		must(t, err)
+
+		if len(got) != total {
+			t.Fatalf("expected %d records with DefaultLimit 50, got %d", total, len(got))
+		}
+	})
+
+	t.Run("no DefaultLimit no WithLimit", func(t *testing.T) {
+		// Insert 10 users; User.Name index has no DefaultLimit.
+		// Use a unique name to avoid collisions with previous test runs.
+		name := "LimitTest" + strconv.Itoa(userID)
+		users := make([]UserRecord, total)
+		for i := range users {
+			users[i] = *(User{
+				Name: name,
+				Type: i,
+			}.Record())
+		}
+		must(t, userDAO.InsertMulti(ctx, users))
+
+		got, err := userDAO.SelectByName(ctx, name)
+		must(t, err)
+
+		if len(got) != total {
+			t.Fatalf("expected %d records without limit, got %d", total, len(got))
+		}
+	})
+
+	t.Run("WithLimit on index without DefaultLimit", func(t *testing.T) {
+		name := "LimitTest" + strconv.Itoa(userID)
+		got, err := userDAO.SelectByName(ctx, name, advpg.WithLimit(5))
+		must(t, err)
+
+		if len(got) != 5 {
+			t.Fatalf("expected 5 records, got %d", len(got))
 		}
 	})
 }
