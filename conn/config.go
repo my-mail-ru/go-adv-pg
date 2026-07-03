@@ -160,7 +160,7 @@ func LoadConnConfigs(config OnlineConf) (masterConf, replicaConf *pgx.ConnConfig
 	attachTimeoutTracer(config, masterConf, timeout)
 
 	if replicaConnString != nil {
-		replicaConf, err = pgx.ParseConfig(masterConnString.String())
+		replicaConf, err = pgx.ParseConfig(replicaConnString.String())
 		if err != nil {
 			return nil, nil, err
 		}
