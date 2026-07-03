@@ -170,7 +170,7 @@ func (dao ExtLinkDAO) DeleteByPrimaryKey(ctx context.Context, inUserID int, inEx
 }
 
 func (model *ExtLinkRecord) querySelectMultiByStatus(inStatuses []int, limit, offset uint) *advpg.SimpleQuery {
-	sql := sqlSelectExtLink + ` WHERE status=IN($1)`
+	sql := sqlSelectExtLink + ` WHERE status=ANY($1)`
 	if limit > 0 {
 		sql += " LIMIT " + strconv.FormatUint(uint64(limit), 10)
 	}
@@ -186,7 +186,7 @@ func (model *ExtLinkRecord) querySelectMultiByStatus(inStatuses []int, limit, of
 
 func (model *ExtLinkRecord) queryDeleteMultiByStatus(inStatuses []int) *advpg.SimpleQuery {
 	return advpg.NewSimpleQuery(
-		`DELETE FROM ext_links WHERE status=IN($1)`,
+		`DELETE FROM ext_links WHERE status=ANY($1)`,
 		[]any{inStatuses},
 		nil,
 	)

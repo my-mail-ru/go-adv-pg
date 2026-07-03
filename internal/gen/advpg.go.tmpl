@@ -365,7 +365,7 @@ func (*{{$model.RecordType}}) Table() string {
 				{{- if $method.NeedResults }}
 				sql := {{$method.Query}} WHERE
 						{{- range $i, $col := $model.IterateIndexKeys $idx }} {{ if $i }}AND {{ end -}}
-							{{ template "sql_result" $col }}={{ if $col.IsMulti }}IN({{ end }}${{inc $i}}{{ if $col.IsMulti }}){{ end }}
+							{{ template "sql_result" $col }}={{ if $col.IsMulti }}ANY(${{inc $i}}){{ else }}${{inc $i}}{{ end }}
 						{{- end -}}
 						{{- if $idx.Condition }} AND {{$idx.Condition}}{{ end -}}
 						{{ template "order_by" $model.IterateIndexOrder $idx }}`
@@ -389,7 +389,7 @@ func (*{{$model.RecordType}}) Table() string {
 				return {{$.AdvPgPkg}}.NewSimpleQuery(
 					{{$method.Query}} WHERE
 						{{- range $i, $col := $model.IterateIndexKeys $idx }} {{ if $i }}AND {{ end -}}
-							{{ template "sql_result" $col }}={{ if $col.IsMulti }}IN({{ end }}${{inc $i}}{{ if $col.IsMulti }}){{ end }}
+							{{ template "sql_result" $col }}={{ if $col.IsMulti }}ANY(${{inc $i}}){{ else }}${{inc $i}}{{ end }}
 						{{- end -}}
 						{{- if $idx.Condition }} AND {{$idx.Condition}}{{ end }}`,
 					[]any{

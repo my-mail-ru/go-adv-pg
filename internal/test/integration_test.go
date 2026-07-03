@@ -705,6 +705,61 @@ func TestUpdateMultiUserDAO(t *testing.T) {
 	})
 }
 
+func TestSelectMultiByStatusExtLinkDAO(t *testing.T) {
+	ctx, db, _ := connectDB(t)
+	extDAO := NewExtLinkDAO(db)
+	userID := createUserID(t, db)
+	now := MyTime{Time: time.Now().Round(time.Second)}
+
+	// Insert three ext_links with distinct statuses. Values 7,8,9 are unique to this
+	// test to avoid colliding with rows inserted by other tests (status filters by
+	// status only, across all users).
+	for i, st := range []int{7, 8, 9} {
+		ext := ExtLink{
+			UserID:     userID,
+			ExternalID: 700 + i,
+			CreatedAt:  now,
+			Status:     st,
+		}.Record()
+		must(t, extDAO.Insert(ctx, ext))
+	}
+
+	t.Run("SelectMultiByStatus", func(t *testing.T) {
+		got, err := extDAO.SelectMultiByStatus(ctx, []int{7, 9})
+		must(t, err)
+
+		gotStatuses := make([]int, len(got))
+		for i, r := range got {
+			gotStatuses[i] = r.Status()
+		}
+		slices.Sort(gotStatuses)
+
+		if !slices.Equal(gotStatuses, []int{7, 9}) {
+			t.Fatalf("SelectMultiByStatus([7 9]): got statuses %v, want [7 9]", gotStatuses)
+		}
+	})
+
+	t.Run("SelectMultiByStatus empty result", func(t *testing.T) {
+		got, err := extDAO.SelectMultiByStatus(ctx, []int{-1, -2})
+		must(t, err)
+
+		if len(got) != 0 {
+			t.Fatalf("expected empty result, got %d records", len(got))
+		}
+	})
+
+	t.Run("DeleteMultiByStatus", func(t *testing.T) {
+		must(t, extDAO.DeleteMultiByStatus(ctx, []int{7, 8}))
+
+		got, err := extDAO.SelectMultiByStatus(ctx, []int{7, 8, 9})
+		must(t, err)
+
+		if len(got) != 1 || got[0].Status() != 9 {
+			t.Fatalf("after DeleteMultiByStatus([7 8]): expected only status 9 to remain, got %d records", len(got))
+		}
+	})
+}
+
 func TestUpdateMultiExtLinkDAO(t *testing.T) {
 	ctx, db, _ := connectDB(t)
 	extDAO := NewExtLinkDAO(db)
@@ -1071,6 +1126,53 @@ func TestDeleteUserDAO(t *testing.T) {
 			}
 		}
 	})
+
+	t.Run("DeleteByName (non-uniq key deleter)", func(t *testing.T) {
+		// Name is a non-uniq index: the deleter removes all matching rows and,
+		// unlike uniq deleters, does not return sql.ErrNoRows when nothing matches.
+		name := "DeleteByNameTest"
+		users := make([]UserRecord, 2)
+		for i := range users {
+			users[i] = *(User{Name: name, Type: i}.Record())
+		}
+		must(t, userDAO.InsertMulti(ctx, users))
+
+		must(t, userDAO.DeleteByName(ctx, name))
+
+		got, err := userDAO.SelectByName(ctx, name)
+		must(t, err)
+		if len(got) != 0 {
+			t.Fatalf("expected all %q users deleted, got %d remaining", name, len(got))
+		}
+
+		// Absent non-uniq key is not an error.
+		must(t, userDAO.DeleteByName(ctx, "NoSuchNameEver"))
+	})
+
+	t.Run("DeleteMultiByIDType (composite multi-key deleter)", func(t *testing.T) {
+		users := make([]UserRecord, 3)
+		for i := range users {
+			users[i] = *(User{Name: "DeleteMultiByIDType", Type: i}.Record())
+		}
+		must(t, userDAO.InsertMulti(ctx, users))
+
+		// Delete the first two by (id, type); include a nonexistent key — it must be ignored.
+		keys := []SelectMultiByIDTypeKey{
+			{ID: users[0].ID(), Type: users[0].Type()},
+			{ID: users[1].ID(), Type: users[1].Type()},
+			{ID: -999, Type: -1},
+		}
+		must(t, userDAO.DeleteMultiByIDType(ctx, keys))
+
+		for i := range 2 {
+			if _, err := userDAO.SelectByID(ctx, users[i].ID()); !errors.Is(err, sql.ErrNoRows) {
+				t.Fatalf("users[%d] should be deleted, but SelectByID returned: %v", i, err)
+			}
+		}
+		if _, err := userDAO.SelectByID(ctx, users[2].ID()); err != nil {
+			t.Fatalf("users[2] should remain, but SelectByID returned: %v", err)
+		}
+	})
 }
 
 func TestDeleteExtLinkDAO(t *testing.T) {
@@ -1120,6 +1222,22 @@ func TestDeleteExtLinkDAO(t *testing.T) {
 			if !errors.Is(err, sql.ErrNoRows) {
 				t.Fatalf("exts[%d] should be deleted, but SelectByPrimaryKey returned: %v", i, err)
 			}
+		}
+	})
+
+	t.Run("DeleteByPrimaryKey (uniq composite key deleter)", func(t *testing.T) {
+		ext := ExtLink{UserID: userID, ExternalID: 700, CreatedAt: now, Status: 1}.Record()
+		must(t, extDAO.Insert(ctx, ext))
+
+		must(t, extDAO.DeleteByPrimaryKey(ctx, userID, 700))
+
+		if _, err := extDAO.SelectByPrimaryKey(ctx, userID, 700); !errors.Is(err, sql.ErrNoRows) {
+			t.Fatalf("record should be deleted, but SelectByPrimaryKey returned: %v", err)
+		}
+
+		// A uniq-key deleter returns sql.ErrNoRows when the key doesn't exist.
+		if err := extDAO.DeleteByPrimaryKey(ctx, userID, 700); !errors.Is(err, sql.ErrNoRows) {
+			t.Fatalf("expected sql.ErrNoRows for absent key, got: %v", err)
 		}
 	})
 }
