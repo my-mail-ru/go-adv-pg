@@ -173,6 +173,134 @@ func TestDelete(t *testing.T) {
 	})
 }
 
+func checkIntArgs(t *testing.T, got []any, want ...int) {
+	t.Helper()
+
+	if len(got) != len(want) {
+		t.Fatalf("expected %d args, got %d: %v", len(want), len(got), got)
+	}
+
+	for i, w := range want {
+		if got[i] != w {
+			t.Errorf("arg %d: got %v (%T), want %d", i, got[i], got[i], w)
+		}
+	}
+}
+
+// TestSelectCondition and TestDeleteCondition lock down the generated WHERE clause
+// (and its args) across the 2x2 of {single vs multiple key columns} x {single vs
+// multiple values}:
+//
+//	                | single value                | multiple values
+//	----------------+-----------------------------+----------------------------------
+//	single column   | name=$1                     | status=ANY($1)
+//	multiple columns| user_id=$1 AND ext_id=$2    | (id, type) IN (($1, $2),($3, $4))
+func TestSelectCondition(t *testing.T) {
+	t.Run("1 column, 1 value", func(t *testing.T) {
+		q := User{}.Record().querySelectByName("bob", 0, 0)
+
+		if !strings.Contains(q.SQL(), "WHERE name=$1") {
+			t.Error("unexpected condition:", q.SQL())
+		}
+		if got := q.Args(); len(got) != 1 || got[0] != "bob" {
+			t.Errorf("unexpected args: %v", got)
+		}
+	})
+
+	t.Run("1 column, N values (ANY)", func(t *testing.T) {
+		q := ExtLink{}.Record().querySelectMultiByStatus([]int{1, 2, 3}, 0, 0)
+
+		if !strings.Contains(q.SQL(), "WHERE status=ANY($1)") {
+			t.Error("unexpected condition:", q.SQL())
+		}
+		if got := q.Args(); len(got) != 1 {
+			t.Errorf("expected 1 arg (the slice), got %d: %v", len(got), got)
+		}
+	})
+
+	t.Run("N columns, 1 value", func(t *testing.T) {
+		q := ExtLink{}.Record().querySelectByPrimaryKey(10, 20, 0, 0)
+
+		if !strings.Contains(q.SQL(), "WHERE user_id=$1 AND ext_id=$2") {
+			t.Error("unexpected condition:", q.SQL())
+		}
+		checkIntArgs(t, q.Args(), 10, 20)
+	})
+
+	t.Run("N columns, N values (row-value IN)", func(t *testing.T) {
+		q := User{}.Record().querySelectMultiByIDType([]SelectMultiByIDTypeKey{
+			{ID: 1, Type: 2},
+			{ID: 3, Type: 4},
+		}, 0, 0)
+
+		if !strings.Contains(q.SQL(), "WHERE (id, type) IN (($1, $2),($3, $4))") {
+			t.Error("unexpected condition:", q.SQL())
+		}
+		checkIntArgs(t, q.Args(), 1, 2, 3, 4)
+	})
+
+	t.Run("N columns, N values, empty slice", func(t *testing.T) {
+		q := User{}.Record().querySelectMultiByIDType(nil, 0, 0)
+
+		if q.SQL() != "" {
+			t.Error("expected empty SQL for empty key slice, got:", q.SQL())
+		}
+	})
+}
+
+func TestDeleteCondition(t *testing.T) {
+	t.Run("1 column, 1 value", func(t *testing.T) {
+		q := User{}.Record().queryDeleteByName("bob")
+
+		if !strings.Contains(q.SQL(), "WHERE name=$1") {
+			t.Error("unexpected condition:", q.SQL())
+		}
+		if got := q.Args(); len(got) != 1 || got[0] != "bob" {
+			t.Errorf("unexpected args: %v", got)
+		}
+	})
+
+	t.Run("1 column, N values (ANY)", func(t *testing.T) {
+		q := ExtLink{}.Record().queryDeleteMultiByStatus([]int{1, 2, 3})
+
+		if !strings.Contains(q.SQL(), "WHERE status=ANY($1)") {
+			t.Error("unexpected condition:", q.SQL())
+		}
+		if got := q.Args(); len(got) != 1 {
+			t.Errorf("expected 1 arg (the slice), got %d: %v", len(got), got)
+		}
+	})
+
+	t.Run("N columns, 1 value", func(t *testing.T) {
+		q := ExtLink{}.Record().queryDeleteByPrimaryKey(10, 20)
+
+		if !strings.Contains(q.SQL(), "WHERE user_id=$1 AND ext_id=$2") {
+			t.Error("unexpected condition:", q.SQL())
+		}
+		checkIntArgs(t, q.Args(), 10, 20)
+	})
+
+	t.Run("N columns, N values (row-value IN)", func(t *testing.T) {
+		q := User{}.Record().queryDeleteMultiByIDType([]SelectMultiByIDTypeKey{
+			{ID: 1, Type: 2},
+			{ID: 3, Type: 4},
+		})
+
+		if !strings.Contains(q.SQL(), "WHERE (id, type) IN (($1, $2),($3, $4))") {
+			t.Error("unexpected condition:", q.SQL())
+		}
+		checkIntArgs(t, q.Args(), 1, 2, 3, 4)
+	})
+
+	t.Run("N columns, N values, empty slice", func(t *testing.T) {
+		q := User{}.Record().queryDeleteMultiByIDType(nil)
+
+		if q.SQL() != "" {
+			t.Error("expected empty SQL for empty key slice, got:", q.SQL())
+		}
+	})
+}
+
 func TestDeleteMulti(t *testing.T) {
 	t.Run("empty slice", func(t *testing.T) {
 		q := queryDeleteMultiUser(nil)
