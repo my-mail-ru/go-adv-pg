@@ -112,8 +112,30 @@ linters:
         - name: var-naming
         - name: waitgroup-by-value
   exclusions:
-    generated: lax
+    # generated: disable lets govet check the generated code too: copylocks
+    # must stay clean for Record types with EnableLock (this replaces the
+    # former go vet make target). Every other linter keeps skipping it.
+    generated: disable
     rules:
+      - linters:
+          - bodyclose
+          - dupl
+          - errcheck
+          - gochecknoinits
+          - gocognit
+          - goconst
+          - gocritic
+          - gocyclo
+          - gosec
+          - ineffassign
+          - misspell
+          - prealloc
+          - revive
+          - staticcheck
+          - unused
+          - wastedassign
+          - wsl_v5
+        path: .*_generated\.go$
       - linters:
           - dupl
           - gocognit

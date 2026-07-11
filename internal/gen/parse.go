@@ -199,12 +199,20 @@ func (f *File) processImports(fset FileSet, imports []*ast.ImportSpec) error {
 		}
 
 		pkgName := ""
+
 		if imp.Name != nil && imp.Name.Name != "_" {
+			// Dot-imports are not supported because their use is strongly
+			// discouraged in most cases, especially in database models where
+			// they can cause confusing name collisions and break code generation.
+			if imp.Name.Name == "." {
+				return fmt.Errorf("adv-pg: %s: dot-imports are not supported", fset.Pos(imp))
+			}
+
 			pkgName = imp.Name.Name
 		}
 
 		f.Imports[i] = ImportSpec{
-			PkgName: pkgName, // TODO support dot-imports
+			PkgName: pkgName,
 			PkgPath: imp.Path.Value,
 		}
 
@@ -274,6 +282,10 @@ func (f *File) fillModels(pkgInfo Package) (err error) {
 
 		if (model.UpdateOnConflict || model.OnConflictDoNothing) && len(model.PrimaryKeyColumns) == 0 {
 			return fmt.Errorf("adv-pg: %s: UpdateOnConflict and OnConflictDoNothing require a primary key", model.GoName)
+		}
+
+		if model.EnableLock && model.DisableActiveRecord {
+			return fmt.Errorf("adv-pg: %s: EnableLock requires ActiveRecord but it is disabled for the table", model.GoName)
 		}
 
 		if model.UpdateOnConflict && len(model.UpdateValueColumns) == 0 && len(model.MutatorColumns) == 0 {

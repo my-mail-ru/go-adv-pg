@@ -245,6 +245,12 @@ func TestParse(t *testing.T) {
 		name:    "no models",
 		wantErr: "no Table is declared in file",
 	}, {
+		name: "dot-import",
+		transformSrc: func(src []byte) []byte {
+			return bytes.Replace(src, []byte("advpg \""), []byte(". \""), 1)
+		},
+		wantErr: "dot-imports are not supported",
+	}, {
 		name:    "incorrect var declaration",
 		wantErr: "validation failed",
 	}, {
@@ -292,6 +298,9 @@ func TestParse(t *testing.T) {
 	}, {
 		name:    "conflicting Selector and Deleter",
 		wantErr: "method name SelectByID is already used for index",
+	}, {
+		name:    "EnableLock with DisableActiveRecord",
+		wantErr: "EnableLock requires ActiveRecord",
 	}, {
 		name:    "mutators are used when the ActiveRecord is disabled",
 		wantErr: "mutators require ActiveRecord but it is disabled for the table",
@@ -354,11 +363,15 @@ func TestParse(t *testing.T) {
 			"queryDeleteNoActiveRecordByPK(inID int)",
 			"queryInsert()",
 			"queryFullUpdate()",
+			"EXTRACT(EPOCH FROM test_table.updated_at)::bigint",
+			"(NoActiveRecord, error)",   // without ActiveRecord single records are returned by value
+			"([]NoActiveRecord, error)", // ... and non-uniq selectors return value slices
 		},
 		mustNot: []string{
 			"//go:generate",
 			"ID()",
 			"Record()",
+			"[]*NoActiveRecord",
 		},
 	}, {
 		name: "no primary key",
@@ -542,10 +555,21 @@ func TestParse(t *testing.T) {
 			"CreatedAt()",
 			"querySelectMutators",
 			"Record()",
+			"mu sync.RWMutex",
+			"model.mu.RLock()",
+			"model.mu.Lock()",
+			"data.mu.Lock()",
+			"data.mu.RLock()",
+			"(*ActiveRecordEnabledRecord, error)",   // with ActiveRecord records are passed by pointer
+			"([]*ActiveRecordEnabledRecord, error)", // ... including non-uniq selector results
+			"records []*ActiveRecordEnabledRecord",  // ... and Multi method arguments
+			"append(ret, &ActiveRecordEnabledRecord{data: data.data})",
 		},
 		mustNot: []string{
 			"SetCreatedAt",
 			"SetUpdatedAt",
+			"(ActiveRecordEnabledRecord, error)",
+			"[]ActiveRecordEnabledRecord",
 		},
 	}, {
 		name: "implicit model",

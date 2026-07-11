@@ -90,9 +90,22 @@ type Table struct {
 	// Use it for tables with simple schemas or for "SELECT-only" data.
 	DisableActiveRecord bool
 
-	// EnableLock isn't implemented yet. Avoid using the Model (or Record) types from
-	// multiple goroutines!
-	EnableLock bool // TODO
+	// EnableLock adds a [sync.RWMutex] to the generated Record struct, enabling safe
+	// concurrent access from multiple goroutines. Getters acquire RLock, setters and
+	// mutators acquire Lock. DAO methods (Insert, Update, FullUpdate, Delete, and their
+	// Multi variants) hold the lock for the full duration of the operation, including the
+	// database call.
+	//
+	// Records are always passed by pointer, so enabling this flag doesn't change any
+	// generated signatures. The mutex guards a Record instance, not the database row:
+	// independently selected records of the same row don't serialize with each other.
+	// Records of a table with EnableLock must never be copied (go vet copylocks).
+	//
+	// Compound values (slices, maps, pointers) stored in the model struct can have their
+	// internals modified without going through a setter, bypassing the lock.
+	//
+	// Requires ActiveRecord (incompatible with DisableActiveRecord).
+	EnableLock bool
 
 	// UpdateOnConflict issues `ON CONFLICT DO UPDATE` for `INSERT` queries.
 	// UpdateByStorage or Mutator fields are retrieved (like `UPDATE` queries do).

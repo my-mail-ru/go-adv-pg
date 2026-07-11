@@ -35,7 +35,7 @@ test:
 	    -coverpkg ./...          \
 	    ./...
 	$(GO) tool cover -html cover.out -o cover.html
- 
+
 .PHONY: test-integration
 test-integration: test-conf dev-env-start
 	$(GO) test $(GOFLAGS) -v                \
