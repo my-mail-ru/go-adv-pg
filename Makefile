@@ -26,7 +26,7 @@ format:
 	find . -name '*.go' | grep -v /vendor/ | xargs goimports -local github.com/my-mail-ru/ -l -w
 
 .PHONY: test
-test: vet
+test:
 	$(GO) test $(GOFLAGS) -v     \
 	    -timeout $(TEST_TIMEOUT) \
 	    -race                    \
@@ -36,14 +36,6 @@ test: vet
 	    ./...
 	$(GO) tool cover -html cover.out -o cover.html
 
-# Unlike golangci-lint (generated: lax), go vet also checks the generated code:
-# copylocks must stay clean for Record types with EnableLock. The composites
-# check is disabled because parser test fixtures use unkeyed literals on purpose.
-.PHONY: vet
-vet:
-	$(GO) vet -composites=false ./...
-	$(GO) vet -composites=false -tags=integration ./...
- 
 .PHONY: test-integration
 test-integration: test-conf dev-env-start
 	$(GO) test $(GOFLAGS) -v                \

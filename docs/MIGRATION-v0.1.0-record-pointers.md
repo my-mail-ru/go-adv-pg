@@ -1,6 +1,6 @@
 # Migration: ActiveRecord records are passed by pointer
 
-Applies when upgrading go-adv-pg past v0.0.11 (the last release passing records by value).
+Applies when upgrading to go-adv-pg v0.1.0 or later (records were passed by value through v0.0.11).
 
 ## What changed
 

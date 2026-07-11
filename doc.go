@@ -105,7 +105,7 @@ not be copied; share the pointer instead. Models of tables with DisableActiveRec
 data and keep value semantics (only the single-record Insert/Update/Delete arguments are pointers).
 
 Prior versions returned single records by value and used []Record slices in selectors and Multi
-methods; see docs/MIGRATION.md for the migration guide.
+methods; see docs/MIGRATION-v0.1.0-record-pointers.md for the migration guide.
 
 # Select
 

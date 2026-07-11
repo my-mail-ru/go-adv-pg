@@ -100,7 +100,7 @@ To simplify a record initialization, the Record\(\) method of the Model is gener
 
 Records are always passed by pointer: Record\(\) returns \*Record, single\-record Select methods return \*Record, non\-uniq Select methods return \[\]\*Record, and the Multi database access methods accept \[\]\*Record. A Record represents a live database row with change\-tracking state and must not be copied; share the pointer instead. Models of tables with DisableActiveRecord are plain data and keep value semantics \(only the single\-record Insert/Update/Delete arguments are pointers\).
 
-Prior versions returned single records by value and used \[\]Record slices in selectors and Multi methods; see docs/MIGRATION.md for the migration guide.
+Prior versions returned single records by value and used \[\]Record slices in selectors and Multi methods; see docs/MIGRATION\-v0.1.0\-record\-pointers.md for the migration guide.
 
 ### Select
 
@@ -724,7 +724,7 @@ type SelectOptionFunc func(*SelectOptions)
 func WithLimit(limit uint) SelectOptionFunc
 ```
 
-WithLimit sets the \`LIMIT\` clause for a \`SELECT\` query. When the index has a \[Index.DefaultLimit\], WithLimit overrides it. A zero value is ignored and the default limit \(if any\) is used instead.
+WithLimit sets the \`LIMIT\` clause for a \`SELECT\` query. When the index has a [Index.DefaultLimit](<#Index>), WithLimit overrides it. A zero value is ignored and the default limit \(if any\) is used instead.
 
 <a name="WithOffset"></a>
 ### func [WithOffset](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L493>)
