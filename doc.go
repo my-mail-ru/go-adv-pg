@@ -98,6 +98,15 @@ methods are generated, but you can access the object fields directly (no additio
 
 To simplify a record initialization, the Record() method of the Model is generated.
 
+Records are always passed by pointer: Record() returns *Record, single-record Select methods
+return *Record, non-uniq Select methods return []*Record, and the Multi database access methods
+accept []*Record. A Record represents a live database row with change-tracking state and must
+not be copied; share the pointer instead. Models of tables with DisableActiveRecord are plain
+data and keep value semantics (only the single-record Insert/Update/Delete arguments are pointers).
+
+Prior versions returned single records by value and used []Record slices in selectors and Multi
+methods; see docs/MIGRATION.md for the migration guide.
+
 # Select
 
 For each [Index] declared for a table, a Select DAO method is generated unless the
@@ -118,21 +127,21 @@ IsMulti, IsUniq, and also the count of the index keys determine the possible com
 arguments and returned values:
 
   - IsMulti: false, IsUniq: true: the Select method accepts index key fields as separate arguments.
-    Exactly one record is returned by value of the Record type (or the ${Model} type itself when
-    the [ActiveRecord] is disabled). The [sql.ErrNoRows] error is returned if no record corresponding to
-    the Select method arguments is found.
+    Exactly one record is returned: a *Record (or a ${Model} value when the [ActiveRecord] is
+    disabled). The [sql.ErrNoRows] error is returned if no record corresponding to
+    the Select method arguments is found (the returned record pointer is nil in this case).
 
   - IsMulti: false, IsUniq: false: the Select method accepts index key fields as separate arguments.
-    A slice of []Record (or []${Model) type is returned. Empty `SELECT` responses aren't
+    A []*Record (or []${Model}) slice is returned. Empty `SELECT` responses aren't
     considered as errors and simply return an empty slice.
 
   - IsMulti: true, a single-key index: the Select method accepts a key slice.
-    A slice of []Record (or []${Model) type is returned. Empty `SELECT` responses aren't
+    A []*Record (or []${Model}) slice is returned. Empty `SELECT` responses aren't
     considered as errors and simply return an empty slice.
 
   - IsMulti: true, a multi-key index: the Select method accepts a slice of the generated
     type, which name is the Select method name with "Key" appended.
-    A slice of []Record (or []${Model) type is returned. Empty `SELECT` responses aren't
+    A []*Record (or []${Model}) slice is returned. Empty `SELECT` responses aren't
     considered as errors and simply return an empty slice.
 
 Some of the following options can be specified after the key(s) argument(s):
@@ -245,7 +254,8 @@ regardless of DisableDeleter:
     and deletes the corresponding row by extracting primary key values from the record.
     Returns [sql.ErrNoRows] if no matching row is found.
 
-  - DeleteMulti. Takes a slice of Records and deletes all matching rows in a single query.
+  - DeleteMulti. Takes a []*Record slice (or []${Model} if [ActiveRecord] is disabled)
+    and deletes all matching rows in a single query.
     For single-column primary keys, uses `DELETE ... WHERE pk IN (...)`.
     For composite primary keys, uses `DELETE ... WHERE (pk1, pk2) IN ((...), ...)`.
     Returns nil for an empty slice. Unlike the single-record Delete, does not return
@@ -256,7 +266,8 @@ regardless of DisableDeleter:
 
 The insert operation is represented by two methods:
   - Insert, which takes a single record,
-  - InsertMulti, which takes a slice of records.
+  - InsertMulti, which takes a slice of records: []*Record (or []${Model} if [ActiveRecord]
+    is disabled).
 
 The Insert DAO method takes two arguments: the [context.Context] and a pointer to the Record
 (or to ${Model} directly if [ActiveRecord] is disabled for a table).
@@ -331,6 +342,7 @@ The update operation is represented by two methods:
     the Update method returns.
 
   - UpdateMulti. Batch update issuing a single `UPDATE...FROM (VALUES ...)` query.
+    Takes a []*Record slice (or []${Model} if [ActiveRecord] is disabled).
     Equivalent to calling FullUpdate for each record, but in one query.
     Always updates all updatable columns (not "smart"/change-tracked).
     Mutator columns are included as increments (same semantics as FullUpdate).
@@ -367,10 +379,22 @@ Mutator methods are:
 
 When EnableLock is set to true in a [Table] definition, a [sync.RWMutex] is embedded in the
 generated Record struct, enabling safe concurrent access to a single Record from multiple goroutines.
+Since records are always passed by pointer, enabling EnableLock doesn't change any generated
+signatures: locking is purely additive, and no call-site rewrite is required.
 
 Getters acquire RLock; setters and mutators acquire Lock. DAO methods (Insert, Update, FullUpdate,
 Delete, and their Multi variants) hold the lock for the entire operation including the database I/O,
 so the lock may be held for a long time.
+
+The mutex guards a Record instance, not the database row: two Select calls for the same row return
+two independent instances that don't serialize with each other (nor with other processes). Counter
+consistency across instances and processes is provided by [Mutators]; anything beyond that needs
+database-level locking.
+
+Records of a table with EnableLock must never be copied — go vet (copylocks) reports such copies.
+Multi methods lock the given records in slice order; concurrent Multi calls over overlapping record
+sets must pass them in a consistent order to avoid deadlocks (a record must not appear twice in
+one call).
 
 Compound values (slices, maps, pointers) stored in the model struct can be modified without going
 through a setter, bypassing the lock.

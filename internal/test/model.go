@@ -194,6 +194,9 @@ var _ = advpg.Table{
 	Indices: []advpg.Index{{
 		Keys:         []string{"ID"},
 		IsPrimaryKey: true,
+	}, {
+		// Non-uniq index: covers the []*Record selector path for tables with EnableLock.
+		Keys: []string{"Type"},
 	}},
 	Fields: []advpg.Field{{
 		Field:         "ID",

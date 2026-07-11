@@ -364,11 +364,14 @@ func TestParse(t *testing.T) {
 			"queryInsert()",
 			"queryFullUpdate()",
 			"EXTRACT(EPOCH FROM test_table.updated_at)::bigint",
+			"(NoActiveRecord, error)",   // without ActiveRecord single records are returned by value
+			"([]NoActiveRecord, error)", // ... and non-uniq selectors return value slices
 		},
 		mustNot: []string{
 			"//go:generate",
 			"ID()",
 			"Record()",
+			"[]*NoActiveRecord",
 		},
 	}, {
 		name: "no primary key",
@@ -557,10 +560,16 @@ func TestParse(t *testing.T) {
 			"model.mu.Lock()",
 			"data.mu.Lock()",
 			"data.mu.RLock()",
+			"(*ActiveRecordEnabledRecord, error)",   // with ActiveRecord records are passed by pointer
+			"([]*ActiveRecordEnabledRecord, error)", // ... including non-uniq selector results
+			"records []*ActiveRecordEnabledRecord",  // ... and Multi method arguments
+			"append(ret, &ActiveRecordEnabledRecord{data: data.data})",
 		},
 		mustNot: []string{
 			"SetCreatedAt",
 			"SetUpdatedAt",
+			"(ActiveRecordEnabledRecord, error)",
+			"[]ActiveRecordEnabledRecord",
 		},
 	}, {
 		name: "implicit model",

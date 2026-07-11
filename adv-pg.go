@@ -96,6 +96,11 @@ type Table struct {
 	// Multi variants) hold the lock for the full duration of the operation, including the
 	// database call.
 	//
+	// Records are always passed by pointer, so enabling this flag doesn't change any
+	// generated signatures. The mutex guards a Record instance, not the database row:
+	// independently selected records of the same row don't serialize with each other.
+	// Records of a table with EnableLock must never be copied (go vet copylocks).
+	//
 	// Compound values (slices, maps, pointers) stored in the model struct can have their
 	// internals modified without going through a setter, bypassing the lock.
 	//

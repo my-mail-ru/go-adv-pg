@@ -331,7 +331,7 @@ func (*{{$model.RecordType}}) Table() string {
 		{{ end -}}
 
 		{{- if $idx.Selector -}}
-			func (dao {{$model.DAO}}) {{$idx.Selector}}(ctx context.Context, keys []{{$idx.KeyStructName}}, optFuncs ...{{$.AdvPgPkg}}.SelectOptionFunc) ([]{{$model.RecordType}}, error) {
+			func (dao {{$model.DAO}}) {{$idx.Selector}}(ctx context.Context, keys []{{$idx.KeyStructName}}, optFuncs ...{{$.AdvPgPkg}}.SelectOptionFunc) ([]{{ if not $model.DisableActiveRecord }}*{{ end }}{{$model.RecordType}}, error) {
 				var data {{$model.RecordType}}
 				ctx = {{$.AdvPgConnPkg}}.QueryInfoCtx(ctx, {{quote $model.Table.Table}}, {{quote $idx.Name}})
 				opt := {{$.AdvPgPkg}}.NewSelectOptions(optFuncs...)
@@ -351,14 +351,18 @@ func (*{{$model.RecordType}}) Table() string {
 
 				defer rows.Close()
 
-				ret := ([]{{$model.RecordType}})(nil){{/* TODO pre-allocation based on an average row count for this type */}}
+				ret := ([]{{ if not $model.DisableActiveRecord }}*{{ end }}{{$model.RecordType}})(nil){{/* TODO pre-allocation based on an average row count for this type */}}
 
 				for rows.Next() {
 					if err = rows.Scan(q.Results()...); err != nil {
 						return nil, err
 					}
 
-					ret = append(ret, data)
+					{{ if $model.DisableActiveRecord -}}
+						ret = append(ret, data)
+					{{- else -}}
+						ret = append(ret, &{{$model.RecordType}}{data: data.data})
+					{{- end }}
 				}
 
 				if err = rows.Err(); err != nil {
@@ -430,10 +434,8 @@ func (*{{$model.RecordType}}) Table() string {
 
 		{{- if $idx.Selector -}}
 			func (dao {{$model.DAO}}) {{$idx.Selector}}(ctx context.Context, {{ template "query_method_args" $model.IterateIndexKeys $idx }}, optFuncs ...{{$.AdvPgPkg}}.SelectOptionFunc) (
-				{{- if $idx.IsUniq -}}
-					{{- if $model.EnableLock }} *{{- end -}}
-				{{- else -}} []
-				{{- end -}}
+				{{- if not $idx.IsUniq }}[]{{ end -}}
+				{{- if not $model.DisableActiveRecord }}*{{ end -}}
 			{{$model.RecordType}}, error) {
 				var data {{$model.RecordType}}
 				ctx = {{$.AdvPgConnPkg}}.QueryInfoCtx(ctx, {{quote $model.Table.Table}},  {{quote $idx.Name}})
@@ -449,9 +451,17 @@ func (*{{$model.RecordType}}) Table() string {
 
 				{{- if $idx.IsUniq }}
 					row := db.QueryRow(ctx, q.SQL(), q.Args()...)
-					err := row.Scan(q.Results()...)
+					{{ if $model.DisableActiveRecord -}}
+						err := row.Scan(q.Results()...)
 
-					return {{ if $model.EnableLock }}&{{ end }}data, err
+						return data, err
+					{{- else -}}
+						if err := row.Scan(q.Results()...); err != nil {
+							return nil, err
+						}
+
+						return &data, nil
+					{{- end }}
 				{{- else }}
 
 					rows, err := db.Query(ctx, q.SQL(), q.Args()...)
@@ -461,14 +471,18 @@ func (*{{$model.RecordType}}) Table() string {
 
 					defer rows.Close()
 
-					ret := ([]{{$model.RecordType}})(nil){{/* TODO pre-allocation based on an average row count for this type */}}
+					ret := ([]{{ if not $model.DisableActiveRecord }}*{{ end }}{{$model.RecordType}})(nil){{/* TODO pre-allocation based on an average row count for this type */}}
 
 					for rows.Next() {
 						if err = rows.Scan(q.Results()...); err != nil {
 							return nil, err
 						}
 
-						ret = append(ret, data)
+						{{ if $model.DisableActiveRecord -}}
+							ret = append(ret, data)
+						{{- else -}}
+							ret = append(ret, &{{$model.RecordType}}{data: data.data})
+						{{- end }}
 					}
 
 					if err = rows.Err(); err != nil {
@@ -542,19 +556,14 @@ func (dao {{$model.DAO}}) Insert(ctx context.Context, data *{{$model.RecordType}
 }
 
 {{ if not (and $model.UpdateOnConflict $model.MutatorColumns) -}}
-	func queryInsertMulti{{$model.GoName}}(models []{{$model.RecordType}}) *{{$.AdvPgPkg}}.QueryBuilder {
+	func queryInsertMulti{{$model.GoName}}(models []{{ if not $model.DisableActiveRecord }}*{{ end }}{{$model.RecordType}}) *{{$.AdvPgPkg}}.QueryBuilder {
 		if len(models) == 0 {
 			return &{{$.AdvPgPkg}}.QueryBuilder{}
 		}
 
 		q := {{$.AdvPgPkg}}.NewQueryBuilderCap(sqlInsertHead{{$model.GoName}}, {{len $model.InsertValueColumns}}*len(models), {{if $model.InsertResultColumns}}{{len $model.InsertResultColumns}}*len(models){{else}}0{{end}})
 
-		for i := range models {
-			{{- if $model.EnableLock }}
-			model := &models[i]
-			{{- else }}
-			model := models[i]
-			{{- end }}
+		for i, model := range models {
 			if i == 0 {
 				q.AppendSQL("(")
 			} else {
@@ -583,14 +592,14 @@ func (dao {{$model.DAO}}) Insert(ctx context.Context, data *{{$model.RecordType}
 		return q
 	}
 
-	func (dao {{$model.DAO}}) InsertMulti(ctx context.Context, records []{{$model.RecordType}}) error {
+	func (dao {{$model.DAO}}) InsertMulti(ctx context.Context, records []{{ if not $model.DisableActiveRecord }}*{{ end }}{{$model.RecordType}}) error {
 		{{- if $model.EnableLock }}
-			for i := range records {
-				records[i].mu.Lock()
+			for _, r := range records {
+				r.mu.Lock()
 			}
 			defer func() {
-				for i := range records {
-					records[i].mu.Unlock()
+				for _, r := range records {
+					r.mu.Unlock()
 				}
 			}()
 		{{- end }}
@@ -642,19 +651,14 @@ func (dao {{$model.DAO}}) Insert(ctx context.Context, data *{{$model.RecordType}
 {{ end -}}
 
 {{ if $model.UpdateValueColumns -}}
-	func queryUpdateMulti{{$model.GoName}}(models []{{$model.RecordType}}) *{{$.AdvPgPkg}}.QueryBuilder {
+	func queryUpdateMulti{{$model.GoName}}(models []{{ if not $model.DisableActiveRecord }}*{{ end }}{{$model.RecordType}}) *{{$.AdvPgPkg}}.QueryBuilder {
 		if len(models) == 0 {
 			return &{{$.AdvPgPkg}}.QueryBuilder{}
 		}
 
 		q := {{$.AdvPgPkg}}.NewQueryBuilderCap(sqlUpdateMultiHead{{$model.GoName}}, {{add (len $model.PrimaryKeyColumns) (add (len $model.UpdateValueColumns) (len $model.MutatorColumns))}}*len(models), {{if $model.UpdateResultColumns}}{{len $model.UpdateResultColumns}}*len(models){{else}}0{{end}})
 
-		for i := range models {
-			{{- if $model.EnableLock }}
-			model := &models[i]
-			{{- else }}
-			model := models[i]
-			{{- end }}
+		for i, model := range models {
 			if i == 0 {
 				q.AppendSQL("(")
 			} else {
@@ -691,14 +695,14 @@ func (dao {{$model.DAO}}) Insert(ctx context.Context, data *{{$model.RecordType}
 		return q
 	}
 
-	func (dao {{$model.DAO}}) UpdateMulti(ctx context.Context, records []{{$model.RecordType}}) error {
+	func (dao {{$model.DAO}}) UpdateMulti(ctx context.Context, records []{{ if not $model.DisableActiveRecord }}*{{ end }}{{$model.RecordType}}) error {
 		{{- if $model.EnableLock }}
-			for i := range records {
-				records[i].mu.Lock()
+			for _, r := range records {
+				r.mu.Lock()
 			}
 			defer func() {
-				for i := range records {
-					records[i].mu.Unlock()
+				for _, r := range records {
+					r.mu.Unlock()
 				}
 			}()
 		{{- end }}
@@ -955,19 +959,14 @@ func (dao {{$model.DAO}}) Insert(ctx context.Context, data *{{$model.RecordType}
 		return nil
 	}
 
-	func queryDeleteMulti{{$model.GoName}}(models []{{$model.RecordType}}) *{{$.AdvPgPkg}}.QueryBuilder {
+	func queryDeleteMulti{{$model.GoName}}(models []{{ if not $model.DisableActiveRecord }}*{{ end }}{{$model.RecordType}}) *{{$.AdvPgPkg}}.QueryBuilder {
 		if len(models) == 0 {
 			return &{{$.AdvPgPkg}}.QueryBuilder{}
 		}
 
 		q := {{$.AdvPgPkg}}.NewQueryBuilder(sqlDeleteMultiHead{{$model.GoName}})
 
-		for i := range models {
-			{{- if $model.EnableLock }}
-			model := &models[i]
-			{{- else }}
-			model := models[i]
-			{{- end }}
+		for i, model := range models {
 			{{- if eq (len $model.PrimaryKeyColumns) 1 }}
 				if i > 0 {
 					q.AppendSQL(",")
@@ -996,18 +995,18 @@ func (dao {{$model.DAO}}) Insert(ctx context.Context, data *{{$model.RecordType}
 		return q
 	}
 
-	func (dao {{$model.DAO}}) DeleteMulti(ctx context.Context, records []{{$model.RecordType}}) error {
+	func (dao {{$model.DAO}}) DeleteMulti(ctx context.Context, records []{{ if not $model.DisableActiveRecord }}*{{ end }}{{$model.RecordType}}) error {
 		if len(records) == 0 {
 			return nil
 		}
 
 		{{- if $model.EnableLock }}
-			for i := range records {
-				records[i].mu.RLock()
+			for _, r := range records {
+				r.mu.RLock()
 			}
 			defer func() {
-				for i := range records {
-					records[i].mu.RUnlock()
+				for _, r := range records {
+					r.mu.RUnlock()
 				}
 			}()
 		{{- end }}

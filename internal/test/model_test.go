@@ -34,7 +34,7 @@ func TestUpdateMulti(t *testing.T) {
 	t.Run("UserOptions no returning", func(t *testing.T) {
 		m1 := UserOptions{UserID: 1, OptionID: 10, Flag: true, Option: "a"}.Record()
 		m2 := UserOptions{UserID: 2, OptionID: 20, Flag: false, Option: "b"}.Record()
-		q := queryUpdateMultiUserOptions([]UserOptionsRecord{*m1, *m2})
+		q := queryUpdateMultiUserOptions([]*UserOptionsRecord{m1, m2})
 		sql := q.SQL()
 
 		if !strings.Contains(sql, "UPDATE user_options SET") {
@@ -65,7 +65,7 @@ func TestUpdateMulti(t *testing.T) {
 		m1.IncPostCount()
 		m2 := User{Name: "bob", Type: 2}.Record()
 		m2.AddPostCount(5)
-		q := queryUpdateMultiUser([]UserRecord{*m1, *m2})
+		q := queryUpdateMultiUser([]*UserRecord{m1, m2})
 		sql := q.SQL()
 
 		if !strings.Contains(sql, "UPDATE users SET") {
@@ -89,7 +89,7 @@ func TestUpdateMulti(t *testing.T) {
 	})
 
 	t.Run("ExtLink with SQLValue in SET", func(t *testing.T) {
-		q := queryUpdateMultiExtLink([]ExtLinkRecord{*ExtLink{UserID: 1, ExternalID: 2, Status: 3}.Record()})
+		q := queryUpdateMultiExtLink([]*ExtLinkRecord{ExtLink{UserID: 1, ExternalID: 2, Status: 3}.Record()})
 		sql := q.SQL()
 
 		if !strings.Contains(sql, "status=(t::ext_links).status") {
@@ -312,7 +312,7 @@ func TestDeleteMulti(t *testing.T) {
 	t.Run("User single PK", func(t *testing.T) {
 		m1 := User{ID: 1}.Record()
 		m2 := User{ID: 2}.Record()
-		q := queryDeleteMultiUser([]UserRecord{*m1, *m2})
+		q := queryDeleteMultiUser([]*UserRecord{m1, m2})
 		sql := q.SQL()
 
 		if !strings.Contains(sql, "DELETE FROM users WHERE") {
@@ -329,7 +329,7 @@ func TestDeleteMulti(t *testing.T) {
 	t.Run("ExtLink composite PK", func(t *testing.T) {
 		m1 := ExtLink{UserID: 1, ExternalID: 10}.Record()
 		m2 := ExtLink{UserID: 2, ExternalID: 20}.Record()
-		q := queryDeleteMultiExtLink([]ExtLinkRecord{*m1, *m2})
+		q := queryDeleteMultiExtLink([]*ExtLinkRecord{m1, m2})
 		sql := q.SQL()
 
 		if !strings.Contains(sql, "DELETE FROM ext_links WHERE") {
@@ -345,7 +345,7 @@ func TestDeleteMulti(t *testing.T) {
 
 	t.Run("UserOptions composite PK", func(t *testing.T) {
 		m1 := UserOptions{UserID: 1, OptionID: 10}.Record()
-		q := queryDeleteMultiUserOptions([]UserOptionsRecord{*m1})
+		q := queryDeleteMultiUserOptions([]*UserOptionsRecord{m1})
 		sql := q.SQL()
 
 		if !strings.Contains(sql, "(user_id, option_id) IN (") {

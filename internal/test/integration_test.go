@@ -28,7 +28,10 @@ import (
 	advpgconn "github.com/my-mail-ru/go-adv-pg/conn"
 )
 
-const insertMultiCount = 100
+const (
+	insertMultiCount = 100
+	ghostName        = "ghost" // a record that is never inserted
+)
 
 func must(t *testing.T, err error) {
 	if err != nil {
@@ -129,7 +132,7 @@ func TestUserDAO(t *testing.T) {
 		must(t, err)
 
 		user.SetName(user.Name() + " Updated")
-		must(t, userDAO.Update(ctx, &user))
+		must(t, userDAO.Update(ctx, user))
 
 		if !user.CreatedAt().Before(user.UpdatedAt()) {
 			t.Fatalf("CreatedAt(%v) should be before UpdatedAt(%v)", user.CreatedAt(), user.UpdatedAt())
@@ -151,8 +154,8 @@ func TestUserDAO(t *testing.T) {
 		user1.IncPostCount()
 		user2.IncPostCount()
 
-		must(t, userDAO.Update(ctx, &user1))
-		must(t, userDAO.Update(ctx, &user2))
+		must(t, userDAO.Update(ctx, user1))
+		must(t, userDAO.Update(ctx, user2))
 
 		if user2.PostCount() != initialPostCount+2 {
 			t.Fatalf("parallel mutator update: PostCount=%d, but %d was expected", user2.PostCount(), initialPostCount+2)
@@ -160,8 +163,8 @@ func TestUserDAO(t *testing.T) {
 
 		user1.IncPostCount()
 
-		must(t, userDAO.Update(ctx, &user1))
-		must(t, userDAO.Update(ctx, &user2)) // Update of unchanged record should be converted to querySelectMutators
+		must(t, userDAO.Update(ctx, user1))
+		must(t, userDAO.Update(ctx, user2)) // Update of unchanged record should be converted to querySelectMutators
 
 		if user2.PostCount() != initialPostCount+3 {
 			t.Fatalf("unchanged update: PostCount=%d, but %d was expected", user2.PostCount(), initialPostCount+3)
@@ -216,7 +219,7 @@ func TestUserDAO(t *testing.T) {
 
 		must(t, err)
 
-		want := []UserRecord{*user2, user1}
+		want := []*UserRecord{user2, user1}
 
 		cmpSlices(t, got, want)
 	})
@@ -258,12 +261,12 @@ func TestUserDAO(t *testing.T) {
 	})
 
 	t.Run("InsertMulti", func(t *testing.T) {
-		users := make([]UserRecord, insertMultiCount)
+		users := make([]*UserRecord, insertMultiCount)
 		for i := range insertMultiCount {
-			users[i] = *(User{
+			users[i] = User{
 				Name: "TestInsertMulti " + strconv.Itoa(i),
 				Type: i,
-			}.Record())
+			}.Record()
 		}
 
 		must(t, userDAO.InsertMulti(ctx, users))
@@ -286,7 +289,7 @@ func TestUserDAO(t *testing.T) {
 
 		must(t, err)
 
-		slices.SortFunc(gotUsers, func(x, y UserRecord) int {
+		slices.SortFunc(gotUsers, func(x, y *UserRecord) int {
 			return cmp.Compare(x.ID(), y.ID())
 		})
 
@@ -417,7 +420,7 @@ func createUserID(t *testing.T, db advpg.DB) int {
 	return userID
 }
 
-func cmpSlices[T any](t *testing.T, got, want []T) {
+func cmpSlices[T any](t *testing.T, got, want []*T) {
 	var val T
 
 	if diff := gocmp.Diff(want, got, gocmpopts.EquateComparable(val)); diff != "" {
@@ -518,7 +521,7 @@ func TestUserViewsDAO(t *testing.T) {
 		must(t, err)
 
 		views2.IncViews()
-		must(t, viewsDAO.Update(ctx, &views2))
+		must(t, viewsDAO.Update(ctx, views2))
 		views.IncViews()
 		must(t, viewsDAO.Insert(ctx, views))
 
@@ -583,8 +586,8 @@ func TestSeenDAO(t *testing.T) {
 		must(t, err)
 
 		seen.SetSeenAt(time.Now())
-		must(t, seenDAO.Update(ctx, &seen))
-		must(t, NewSeenDAO(errDB{}).Update(ctx, &seen))
+		must(t, seenDAO.Update(ctx, seen))
+		must(t, NewSeenDAO(errDB{}).Update(ctx, seen))
 	})
 
 	checkMetrics(t, ms, expectedMetrics{
@@ -613,12 +616,12 @@ func TestUpdateMultiUserDAO(t *testing.T) {
 	userDAO := NewUserDAO(db)
 
 	// Insert 3 users
-	users := make([]UserRecord, 3)
+	users := make([]*UserRecord, 3)
 	for i := range users {
-		users[i] = *(User{
+		users[i] = User{
 			Name: "UpdateMulti User " + strconv.Itoa(i),
 			Type: i + 1,
-		}.Record())
+		}.Record()
 	}
 	must(t, userDAO.InsertMulti(ctx, users))
 
@@ -691,9 +694,9 @@ func TestUpdateMultiUserDAO(t *testing.T) {
 	})
 
 	t.Run("missing keys with RETURNING", func(t *testing.T) {
-		records := []UserRecord{
+		records := []*UserRecord{
 			users[0],
-			*(User{ID: -999, Name: "ghost", Type: 0}.Record()),
+			User{ID: -999, Name: ghostName, Type: 0}.Record(),
 		}
 
 		err := userDAO.UpdateMulti(ctx, records)
@@ -768,18 +771,18 @@ func TestUpdateMultiExtLinkDAO(t *testing.T) {
 	now := MyTime{Time: time.Now().Round(time.Second)}
 
 	// Insert 2 ext_links
-	exts := make([]ExtLinkRecord, 2)
+	exts := make([]*ExtLinkRecord, 2)
 	for i := range exts {
-		exts[i] = *(ExtLink{
+		exts[i] = ExtLink{
 			UserID:     userID,
 			ExternalID: 100 + i,
 			CreatedAt:  now,
 			Status:     i,
-		}.Record())
+		}.Record()
 	}
 
 	for i := range exts {
-		must(t, extDAO.Insert(ctx, &exts[i]))
+		must(t, extDAO.Insert(ctx, exts[i]))
 	}
 
 	t.Run("mutators with RETURNING", func(t *testing.T) {
@@ -875,7 +878,7 @@ func TestSQLValueUpdateExtLinkDAO(t *testing.T) {
 		knownTime := MyTime{Time: time.Unix(knownEpoch, 0)}
 		selected.SetModifiedAt(knownTime)
 
-		must(t, extDAO.Update(ctx, &selected))
+		must(t, extDAO.Update(ctx, selected))
 
 		// Verify modified_at round-trips through SQLValue in the smart Update.
 		got, err := extDAO.SelectByPrimaryKey(ctx, ext.UserID(), ext.ExternalID())
@@ -913,7 +916,7 @@ func TestSQLValueUpdateExtLinkDAO(t *testing.T) {
 		r1.SetModifiedAt(MyTime{Time: time.Unix(epoch1, 0)})
 		r2.SetModifiedAt(MyTime{Time: time.Unix(epoch2, 0)})
 
-		records := []ExtLinkRecord{r1, r2}
+		records := []*ExtLinkRecord{r1, r2}
 		must(t, extDAO.UpdateMulti(ctx, records))
 
 		// Verify modified_at values round-trip through SQLValue in UpdateMulti VALUES.
@@ -945,14 +948,14 @@ func TestUpdateMultiUserOptionsDAO(t *testing.T) {
 	userID := createUserID(t, db)
 
 	// Insert 3 options
-	opts := make([]UserOptionsRecord, 3)
+	opts := make([]*UserOptionsRecord, 3)
 	for i := range opts {
-		opts[i] = *(UserOptions{
+		opts[i] = UserOptions{
 			UserID:   userID,
 			OptionID: i,
 			Flag:     false,
 			Option:   "original " + strconv.Itoa(i),
-		}.Record())
+		}.Record()
 	}
 	must(t, optDAO.InsertMulti(ctx, opts))
 
@@ -971,9 +974,9 @@ func TestUpdateMultiUserOptionsDAO(t *testing.T) {
 	})
 
 	t.Run("missing keys without RETURNING", func(t *testing.T) {
-		records := []UserOptionsRecord{
+		records := []*UserOptionsRecord{
 			opts[0],
-			*(UserOptions{UserID: -999, OptionID: -1, Flag: true, Option: "ghost"}.Record()),
+			UserOptions{UserID: -999, OptionID: -1, Flag: true, Option: ghostName}.Record(),
 		}
 
 		// No RETURNING → Exec path → no error for missing keys
@@ -1006,28 +1009,28 @@ func TestResetAfterOperation(t *testing.T) {
 	})
 
 	t.Run("InsertMulti resets records", func(t *testing.T) {
-		recs := []UserOptionsRecord{
-			*(UserOptions{UserID: userID, OptionID: 501, Flag: true, Option: "multi1"}.Record()),
-			*(UserOptions{UserID: userID, OptionID: 502, Flag: false, Option: "multi2"}.Record()),
+		recs := []*UserOptionsRecord{
+			UserOptions{UserID: userID, OptionID: 501, Flag: true, Option: "multi1"}.Record(),
+			UserOptions{UserID: userID, OptionID: 502, Flag: false, Option: "multi2"}.Record(),
 		}
 		recs[0].SetOption("changed")
 		recs[1].SetFlag(true)
 		must(t, optDAO.InsertMulti(ctx, recs))
 		for i := range recs {
-			must(t, errDAO.Update(ctx, &recs[i]))
+			must(t, errDAO.Update(ctx, recs[i]))
 		}
 	})
 
 	t.Run("UpdateMulti resets records", func(t *testing.T) {
-		recs := []UserOptionsRecord{
-			*(UserOptions{UserID: userID, OptionID: 501, Flag: false, Option: "um1"}.Record()),
-			*(UserOptions{UserID: userID, OptionID: 502, Flag: true, Option: "um2"}.Record()),
+		recs := []*UserOptionsRecord{
+			UserOptions{UserID: userID, OptionID: 501, Flag: false, Option: "um1"}.Record(),
+			UserOptions{UserID: userID, OptionID: 502, Flag: true, Option: "um2"}.Record(),
 		}
 		recs[0].SetOption("multi-updated-1")
 		recs[1].SetFlag(false)
 		must(t, optDAO.UpdateMulti(ctx, recs))
 		for i := range recs {
-			must(t, errDAO.Update(ctx, &recs[i]))
+			must(t, errDAO.Update(ctx, recs[i]))
 		}
 	})
 }
@@ -1038,13 +1041,13 @@ func TestUserOptionsDAO(t *testing.T) {
 	userID := createUserID(t, db)
 
 	t.Run("InsertMulti", func(t *testing.T) {
-		opts := make([]UserOptionsRecord, insertMultiCount)
+		opts := make([]*UserOptionsRecord, insertMultiCount)
 		for i := range insertMultiCount {
-			opts[i] = *(UserOptions{
+			opts[i] = UserOptions{
 				UserID:   userID,
 				OptionID: i,
 				Flag:     i%2 != 0,
-			}.Record())
+			}.Record()
 		}
 
 		must(t, optDAO.InsertMulti(ctx, opts))
@@ -1105,19 +1108,19 @@ func TestDeleteUserDAO(t *testing.T) {
 	})
 
 	t.Run("DeleteMulti", func(t *testing.T) {
-		users := make([]UserRecord, 3)
+		users := make([]*UserRecord, 3)
 		for i := range users {
-			users[i] = *(User{
+			users[i] = User{
 				Name: "DeleteMulti " + strconv.Itoa(i),
 				Type: i,
-			}.Record())
+			}.Record()
 		}
 		must(t, userDAO.InsertMulti(ctx, users))
 
 		// Mix existing and non-existing records; DeleteMulti must not error.
-		records := make([]UserRecord, len(users), len(users)+1)
+		records := make([]*UserRecord, len(users), len(users)+1)
 		copy(records, users)
-		records = append(records, *(User{ID: -999}.Record()))
+		records = append(records, User{ID: -999}.Record())
 		must(t, userDAO.DeleteMulti(ctx, records))
 
 		for i, u := range users {
@@ -1132,9 +1135,9 @@ func TestDeleteUserDAO(t *testing.T) {
 		// Name is a non-uniq index: the deleter removes all matching rows and,
 		// unlike uniq deleters, does not return sql.ErrNoRows when nothing matches.
 		name := "DeleteByNameTest"
-		users := make([]UserRecord, 2)
+		users := make([]*UserRecord, 2)
 		for i := range users {
-			users[i] = *(User{Name: name, Type: i}.Record())
+			users[i] = User{Name: name, Type: i}.Record()
 		}
 		must(t, userDAO.InsertMulti(ctx, users))
 
@@ -1151,9 +1154,9 @@ func TestDeleteUserDAO(t *testing.T) {
 	})
 
 	t.Run("DeleteMultiByIDType (composite multi-key deleter)", func(t *testing.T) {
-		users := make([]UserRecord, 3)
+		users := make([]*UserRecord, 3)
 		for i := range users {
-			users[i] = *(User{Name: "DeleteMultiByIDType", Type: i}.Record())
+			users[i] = User{Name: "DeleteMultiByIDType", Type: i}.Record()
 		}
 		must(t, userDAO.InsertMulti(ctx, users))
 
@@ -1203,17 +1206,17 @@ func TestDeleteExtLinkDAO(t *testing.T) {
 	})
 
 	t.Run("DeleteMulti", func(t *testing.T) {
-		exts := make([]ExtLinkRecord, 3)
+		exts := make([]*ExtLinkRecord, 3)
 		for i := range exts {
-			exts[i] = *(ExtLink{
+			exts[i] = ExtLink{
 				UserID:     userID,
 				ExternalID: 600 + i,
 				CreatedAt:  now,
 				Status:     i,
-			}.Record())
+			}.Record()
 		}
 		for i := range exts {
-			must(t, extDAO.Insert(ctx, &exts[i]))
+			must(t, extDAO.Insert(ctx, exts[i]))
 		}
 
 		must(t, extDAO.DeleteMulti(ctx, exts))
@@ -1251,14 +1254,14 @@ func TestSelectLimitOffsetDAO(t *testing.T) {
 
 	// Insert 10 user_options records.
 	const total = 10
-	opts := make([]UserOptionsRecord, total)
+	opts := make([]*UserOptionsRecord, total)
 	for i := range opts {
-		opts[i] = *(UserOptions{
+		opts[i] = UserOptions{
 			UserID:   userID,
 			OptionID: i,
 			Flag:     i%2 != 0,
 			Option:   "opt" + strconv.Itoa(i),
-		}.Record())
+		}.Record()
 	}
 	must(t, optDAO.InsertMulti(ctx, opts))
 
@@ -1300,12 +1303,12 @@ func TestSelectLimitOffsetDAO(t *testing.T) {
 		// Insert 10 users; User.Name index has no DefaultLimit.
 		// Use a unique name to avoid collisions with previous test runs.
 		name := "LimitTest" + strconv.Itoa(userID)
-		users := make([]UserRecord, total)
+		users := make([]*UserRecord, total)
 		for i := range users {
-			users[i] = *(User{
+			users[i] = User{
 				Name: name,
 				Type: i,
-			}.Record())
+			}.Record()
 		}
 		must(t, userDAO.InsertMulti(ctx, users))
 
@@ -1423,10 +1426,12 @@ func TestEnableLock(t *testing.T) {
 	})
 
 	t.Run("getter blocked during InsertMulti", func(t *testing.T) {
+		const secondName = "LockTest Multi 1"
+
 		// Create two fresh records.
-		users := []LockableUserRecord{
-			*LockableUser{Name: "LockTest Multi 0", Type: 10}.Record(),
-			*LockableUser{Name: "LockTest Multi 1", Type: 11}.Record(),
+		users := []*LockableUserRecord{
+			LockableUser{Name: "LockTest Multi 0", Type: 10}.Record(),
+			LockableUser{Name: secondName, Type: 11}.Record(),
 		}
 
 		slow := &slowDB{db: db, started: make(chan struct{}), proceed: make(chan struct{})}
@@ -1462,8 +1467,8 @@ func TestEnableLock(t *testing.T) {
 
 		select {
 		case name := <-getterDone:
-			if name != "LockTest Multi 1" {
-				t.Fatalf("getter returned %q, want %q", name, "LockTest Multi 1")
+			if name != secondName {
+				t.Fatalf("getter returned %q, want %q", name, secondName)
 			}
 		case <-time.After(time.Second):
 			t.Fatal("getter still blocked after InsertMulti finished")
@@ -1532,6 +1537,47 @@ func TestEnableLock(t *testing.T) {
 		_, err := lockDAO.SelectByID(ctx, rec.ID())
 		if !errors.Is(err, sql.ErrNoRows) {
 			t.Fatalf("SelectByID after Delete: got %v, want sql.ErrNoRows", err)
+		}
+	})
+
+	t.Run("non-uniq selector", func(t *testing.T) {
+		// Type value unique to this test: the selector filters by type only,
+		// across rows inserted by all tests.
+		const lockType = 777001
+
+		// Rows survive across test invocations while the dev environment keeps
+		// running; start clean (this also covers DeleteByType on a lock table).
+		must(t, lockDAO.DeleteByType(ctx, lockType))
+
+		users := []*LockableUserRecord{
+			LockableUser{Name: "LockTest Select 0", Type: lockType}.Record(),
+			LockableUser{Name: "LockTest Select 1", Type: lockType}.Record(),
+		}
+		must(t, lockDAO.InsertMulti(ctx, users))
+
+		got, err := lockDAO.SelectByType(ctx, lockType)
+		must(t, err)
+
+		if len(got) != 2 {
+			t.Fatalf("SelectByType: got %d records, want 2", len(got))
+		}
+
+		// Each returned record is a fresh instance with a usable lock:
+		// mutate one through its pointer and persist.
+		slices.SortFunc(got, func(x, y *LockableUserRecord) int {
+			return cmp.Compare(x.ID(), y.ID())
+		})
+
+		const updatedName = "LockTest Select 0 Updated"
+
+		got[0].SetName(updatedName)
+		must(t, lockDAO.Update(ctx, got[0]))
+
+		check, err := lockDAO.SelectByID(ctx, got[0].ID())
+		must(t, err)
+
+		if check.Name() != updatedName {
+			t.Fatalf("Name after Update via selected pointer: got %q, want %q", check.Name(), updatedName)
 		}
 	})
 }

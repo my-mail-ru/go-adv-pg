@@ -98,6 +98,10 @@ When the ActiveRecord is disabled \(DisableActiveRecord in a [Table](<#Table>) d
 
 To simplify a record initialization, the Record\(\) method of the Model is generated.
 
+Records are always passed by pointer: Record\(\) returns \*Record, single\-record Select methods return \*Record, non\-uniq Select methods return \[\]\*Record, and the Multi database access methods accept \[\]\*Record. A Record represents a live database row with change\-tracking state and must not be copied; share the pointer instead. Models of tables with DisableActiveRecord are plain data and keep value semantics \(only the single\-record Insert/Update/Delete arguments are pointers\).
+
+Prior versions returned single records by value and used \[\]Record slices in selectors and Multi methods; see docs/MIGRATION.md for the migration guide.
+
 ### Select
 
 For each [Index](<#Index>) declared for a table, a Select DAO method is generated unless the [Index](<#Index>).DisableSelector is set to true. You can specify the Select method name explicitly using the [Index](<#Index>).Selector, otherwise the method name is produced in the following way:
@@ -110,13 +114,13 @@ In complex table schemas with many multi\-key indices, default Selector names ma
 
 IsMulti, IsUniq, and also the count of the index keys determine the possible combinations of arguments and returned values:
 
-- IsMulti: false, IsUniq: true: the Select method accepts index key fields as separate arguments. Exactly one record is returned by value of the Record type \(or the $\{Model\} type itself when the [ActiveRecord](<https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-ActiveRecord>) is disabled\). The \[sql.ErrNoRows\] error is returned if no record corresponding to the Select method arguments is found.
+- IsMulti: false, IsUniq: true: the Select method accepts index key fields as separate arguments. Exactly one record is returned: a \*Record \(or a $\{Model\} value when the [ActiveRecord](<https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-ActiveRecord>) is disabled\). The \[sql.ErrNoRows\] error is returned if no record corresponding to the Select method arguments is found \(the returned record pointer is nil in this case\).
 
-- IsMulti: false, IsUniq: false: the Select method accepts index key fields as separate arguments. A slice of \[\]Record \(or \[\]$\{Model\) type is returned. Empty \`SELECT\` responses aren't considered as errors and simply return an empty slice.
+- IsMulti: false, IsUniq: false: the Select method accepts index key fields as separate arguments. A \[\]\*Record \(or \[\]$\{Model\}\) slice is returned. Empty \`SELECT\` responses aren't considered as errors and simply return an empty slice.
 
-- IsMulti: true, a single\-key index: the Select method accepts a key slice. A slice of \[\]Record \(or \[\]$\{Model\) type is returned. Empty \`SELECT\` responses aren't considered as errors and simply return an empty slice.
+- IsMulti: true, a single\-key index: the Select method accepts a key slice. A \[\]\*Record \(or \[\]$\{Model\}\) slice is returned. Empty \`SELECT\` responses aren't considered as errors and simply return an empty slice.
 
-- IsMulti: true, a multi\-key index: the Select method accepts a slice of the generated type, which name is the Select method name with "Key" appended. A slice of \[\]Record \(or \[\]$\{Model\) type is returned. Empty \`SELECT\` responses aren't considered as errors and simply return an empty slice.
+- IsMulti: true, a multi\-key index: the Select method accepts a slice of the generated type, which name is the Select method name with "Key" appended. A \[\]\*Record \(or \[\]$\{Model\}\) slice is returned. Empty \`SELECT\` responses aren't considered as errors and simply return an empty slice.
 
 Some of the following options can be specified after the key\(s\) argument\(s\):
 
@@ -234,14 +238,14 @@ Record\-based Delete methods are always generated when a primary key [Index](<#I
 
 - Delete. Takes a pointer to the Record \(or to $\{Model\} directly if [ActiveRecord](<https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-ActiveRecord>) is disabled\) and deletes the corresponding row by extracting primary key values from the record. Returns \[sql.ErrNoRows\] if no matching row is found.
 
-- DeleteMulti. Takes a slice of Records and deletes all matching rows in a single query. For single\-column primary keys, uses \`DELETE ... WHERE pk IN \(...\)\`. For composite primary keys, uses \`DELETE ... WHERE \(pk1, pk2\) IN \(\(...\), ...\)\`. Returns nil for an empty slice. Unlike the single\-record Delete, does not return an error when some records are not found; existing and non\-existing records can be freely mixed in the input slice.
+- DeleteMulti. Takes a \[\]\*Record slice \(or \[\]$\{Model\} if [ActiveRecord](<https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-ActiveRecord>) is disabled\) and deletes all matching rows in a single query. For single\-column primary keys, uses \`DELETE ... WHERE pk IN \(...\)\`. For composite primary keys, uses \`DELETE ... WHERE \(pk1, pk2\) IN \(\(...\), ...\)\`. Returns nil for an empty slice. Unlike the single\-record Delete, does not return an error when some records are not found; existing and non\-existing records can be freely mixed in the input slice.
 
 ### Insert
 
 The insert operation is represented by two methods:
 
 - Insert, which takes a single record,
-- InsertMulti, which takes a slice of records.
+- InsertMulti, which takes a slice of records: \[\]\*Record \(or \[\]$\{Model\} if [ActiveRecord](<https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-ActiveRecord>) is disabled\).
 
 The Insert DAO method takes two arguments: the [context.Context](<https://pkg.go.dev/context/#Context>) and a pointer to the Record \(or to $\{Model\} directly if [ActiveRecord](<https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-ActiveRecord>) is disabled for a table\).
 
@@ -279,7 +283,7 @@ The update operation is represented by two methods:
 
 - Update \(aka "smart" Update\). Like FullUpdate, it requires a primary key to be declared. Requires [ActiveRecord](<https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-ActiveRecord>) \(i.e. DisableActiveRecord set to false for a [Table](<#Table>)\). The Record type's Setter methods and mutator \(Inc/Dec/Add\) methods track data changes. Only the changed fields \(i.e. on which the Set method is called, or which mutator counter is non\-zero\) are mentioned in the SET clause of the UPDATE query. If a record has no changed fields and there are no mutator fields defined, the UPDATE query isn't issued at all. When there are some mutator fields defined, but no fields are changed \(i.e. no Set methods are called after the previous operation, and all mutator counters are zero\), the SELECT operation is issued instead of the UPDATE to retrieve the current mutator values from a database. Thus, all mutator fields are guaranteed to hold actual values when the Update method returns.
 
-- UpdateMulti. Batch update issuing a single \`UPDATE...FROM \(VALUES ...\)\` query. Equivalent to calling FullUpdate for each record, but in one query. Always updates all updatable columns \(not "smart"/change\-tracked\). Mutator columns are included as increments \(same semantics as FullUpdate\). Like InsertMulti, result ordering relies on PostgreSQL returning rows in VALUES order. When the table has RETURNING columns \(UpdateByStorage or mutators\) and some primary keys in the input slice don't match any existing rows, the missing rows produce no RETURNING output. The generated code detects the count mismatch and returns an error, but by that point the RETURNING values have already been scanned into wrong record slots sequentially \(same issue as InsertMulti with OnConflictDoNothing, except that here the error is reported\).
+- UpdateMulti. Batch update issuing a single \`UPDATE...FROM \(VALUES ...\)\` query. Takes a \[\]\*Record slice \(or \[\]$\{Model\} if [ActiveRecord](<https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-ActiveRecord>) is disabled\). Equivalent to calling FullUpdate for each record, but in one query. Always updates all updatable columns \(not "smart"/change\-tracked\). Mutator columns are included as increments \(same semantics as FullUpdate\). Like InsertMulti, result ordering relies on PostgreSQL returning rows in VALUES order. When the table has RETURNING columns \(UpdateByStorage or mutators\) and some primary keys in the input slice don't match any existing rows, the missing rows produce no RETURNING output. The generated code detects the count mismatch and returns an error, but by that point the RETURNING values have already been scanned into wrong record slots sequentially \(same issue as InsertMulti with OnConflictDoNothing, except that here the error is reported\).
 
 The following [Field](<#Field>) properties control the [Update](<https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-Update>) method behavior:
 
@@ -300,9 +304,13 @@ Mutator methods are:
 
 ### Concurrency \\\(EnableLock\\\)
 
-When EnableLock is set to true in a [Table](<#Table>) definition, a [sync.RWMutex](<https://pkg.go.dev/sync/#RWMutex>) is embedded in the generated Record struct, enabling safe concurrent access to a single Record from multiple goroutines.
+When EnableLock is set to true in a [Table](<#Table>) definition, a [sync.RWMutex](<https://pkg.go.dev/sync/#RWMutex>) is embedded in the generated Record struct, enabling safe concurrent access to a single Record from multiple goroutines. Since records are always passed by pointer, enabling EnableLock doesn't change any generated signatures: locking is purely additive, and no call\-site rewrite is required.
 
 Getters acquire RLock; setters and mutators acquire Lock. DAO methods \(Insert, Update, FullUpdate, Delete, and their Multi variants\) hold the lock for the entire operation including the database I/O, so the lock may be held for a long time.
+
+The mutex guards a Record instance, not the database row: two Select calls for the same row return two independent instances that don't serialize with each other \(nor with other processes\). Counter consistency across instances and processes is provided by [Mutators](<https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg#hdr-Mutators>); anything beyond that needs database\-level locking.
+
+Records of a table with EnableLock must never be copied — go vet \(copylocks\) reports such copies. Multi methods lock the given records in slice order; concurrent Multi calls over overlapping record sets must pass them in a consistent order to avoid deadlocks \(a record must not appear twice in one call\).
 
 Compound values \(slices, maps, pointers\) stored in the model struct can be modified without going through a setter, bypassing the lock.
 
@@ -353,7 +361,7 @@ EnableLock requires [ActiveRecord](<https://pkg.go.dev/github.com/my-mail-ru/go-
 
 
 <a name="DB"></a>
-## type [DB](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L322-L326>)
+## type [DB](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L327-L331>)
 
 DB describes the database interface required by the code generated by this library. \[pgx.Conn\], \[pgxpool.Pool\], and \[pgx.Tx\] implement this interface.
 
@@ -368,7 +376,7 @@ type DB interface {
 ```
 
 <a name="Field"></a>
-## type [Field](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L216-L273>)
+## type [Field](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L221-L278>)
 
 Field describes special field properties such as InitByStorage or custom raw SQL snippets. Most table fields don't have to be listed here.
 
@@ -434,7 +442,7 @@ type Field struct {
 ```
 
 <a name="Field.Validate"></a>
-### func \(\*Field\) [Validate](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L294>)
+### func \(\*Field\) [Validate](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L299>)
 
 ```go
 func (f *Field) Validate() error
@@ -443,7 +451,7 @@ func (f *Field) Validate() error
 Validate ensures that the Field name is always set.
 
 <a name="Index"></a>
-## type [Index](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L129-L198>)
+## type [Index](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L134-L203>)
 
 Index describes a set of columns used as keys in Select/Delete/Update queries. Strictly speaking, the Index value doesn't have to correspond to the real database indices declared using the \`CREATE INDEX\` query.
 
@@ -521,7 +529,7 @@ type Index struct {
 ```
 
 <a name="Index.KeyStructName"></a>
-### func \(\*Index\) [KeyStructName](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L305>)
+### func \(\*Index\) [KeyStructName](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L310>)
 
 ```go
 func (idx *Index) KeyStructName() string
@@ -530,7 +538,7 @@ func (idx *Index) KeyStructName() string
 KeyStructName returns a key type name if idx is a multi index with multiple keys, and Selector and Deleter aren't both disabled. In other cases, it returns an empty string.
 
 <a name="Index.Validate"></a>
-### func \(\*Index\) [Validate](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L285>)
+### func \(\*Index\) [Validate](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L290>)
 
 ```go
 func (idx *Index) Validate() error
@@ -539,7 +547,7 @@ func (idx *Index) Validate() error
 Validate ensures that Keys are always specified for an [Index](<#Index>).
 
 <a name="Order"></a>
-## type [Order](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L209-L212>)
+## type [Order](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L214-L217>)
 
 Order specifies the \`ORDER BY\` clause for \`SELECT\` queries.
 
@@ -551,7 +559,7 @@ type Order struct {
 ```
 
 <a name="OrderDirection"></a>
-## type [OrderDirection](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L200>)
+## type [OrderDirection](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L205>)
 
 
 
@@ -569,7 +577,7 @@ const (
 ```
 
 <a name="Query"></a>
-## type [Query](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L328-L332>)
+## type [Query](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L333-L337>)
 
 
 
@@ -582,7 +590,7 @@ type Query interface {
 ```
 
 <a name="QueryBuilder"></a>
-## type [QueryBuilder](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L371-L375>)
+## type [QueryBuilder](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L376-L380>)
 
 QueryBuilder is a dynamic query builder. Implements the [Query](<#Query>) interface.
 
@@ -593,7 +601,7 @@ type QueryBuilder struct {
 ```
 
 <a name="NewQueryBuilder"></a>
-### func [NewQueryBuilder](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L379>)
+### func [NewQueryBuilder](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L384>)
 
 ```go
 func NewQueryBuilder(query string) *QueryBuilder
@@ -602,7 +610,7 @@ func NewQueryBuilder(query string) *QueryBuilder
 
 
 <a name="NewQueryBuilderCap"></a>
-### func [NewQueryBuilderCap](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L391>)
+### func [NewQueryBuilderCap](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L396>)
 
 ```go
 func NewQueryBuilderCap(query string, argsCap, resultsCap int) *QueryBuilder
@@ -611,7 +619,7 @@ func NewQueryBuilderCap(query string, argsCap, resultsCap int) *QueryBuilder
 
 
 <a name="QueryBuilder.AppendArgs"></a>
-### func \(\*QueryBuilder\) [AppendArgs](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L420>)
+### func \(\*QueryBuilder\) [AppendArgs](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L425>)
 
 ```go
 func (qb *QueryBuilder) AppendArgs(arg ...any)
@@ -620,7 +628,7 @@ func (qb *QueryBuilder) AppendArgs(arg ...any)
 
 
 <a name="QueryBuilder.AppendPlaceholder"></a>
-### func \(\*QueryBuilder\) [AppendPlaceholder](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L411>)
+### func \(\*QueryBuilder\) [AppendPlaceholder](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L416>)
 
 ```go
 func (qb *QueryBuilder) AppendPlaceholder()
@@ -629,7 +637,7 @@ func (qb *QueryBuilder) AppendPlaceholder()
 
 
 <a name="QueryBuilder.AppendPlaceholderNum"></a>
-### func \(\*QueryBuilder\) [AppendPlaceholderNum](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L416>)
+### func \(\*QueryBuilder\) [AppendPlaceholderNum](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L421>)
 
 ```go
 func (qb *QueryBuilder) AppendPlaceholderNum()
@@ -638,7 +646,7 @@ func (qb *QueryBuilder) AppendPlaceholderNum()
 
 
 <a name="QueryBuilder.AppendResults"></a>
-### func \(\*QueryBuilder\) [AppendResults](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L424>)
+### func \(\*QueryBuilder\) [AppendResults](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L429>)
 
 ```go
 func (qb *QueryBuilder) AppendResults(res ...any)
@@ -647,7 +655,7 @@ func (qb *QueryBuilder) AppendResults(res ...any)
 
 
 <a name="QueryBuilder.AppendSQL"></a>
-### func \(\*QueryBuilder\) [AppendSQL](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L403>)
+### func \(\*QueryBuilder\) [AppendSQL](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L408>)
 
 ```go
 func (qb *QueryBuilder) AppendSQL(query string)
@@ -656,7 +664,7 @@ func (qb *QueryBuilder) AppendSQL(query string)
 
 
 <a name="QueryBuilder.Args"></a>
-### func \(\*QueryBuilder\) [Args](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L440>)
+### func \(\*QueryBuilder\) [Args](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L445>)
 
 ```go
 func (qb *QueryBuilder) Args() []any
@@ -665,7 +673,7 @@ func (qb *QueryBuilder) Args() []any
 
 
 <a name="QueryBuilder.Placeholder"></a>
-### func \(\*QueryBuilder\) [Placeholder](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L407>)
+### func \(\*QueryBuilder\) [Placeholder](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L412>)
 
 ```go
 func (qb *QueryBuilder) Placeholder() string
@@ -674,7 +682,7 @@ func (qb *QueryBuilder) Placeholder() string
 
 
 <a name="QueryBuilder.Results"></a>
-### func \(\*QueryBuilder\) [Results](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L444>)
+### func \(\*QueryBuilder\) [Results](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L449>)
 
 ```go
 func (qb *QueryBuilder) Results() []any
@@ -683,7 +691,7 @@ func (qb *QueryBuilder) Results() []any
 
 
 <a name="QueryBuilder.SQL"></a>
-### func \(\*QueryBuilder\) [SQL](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L432>)
+### func \(\*QueryBuilder\) [SQL](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L437>)
 
 ```go
 func (qb *QueryBuilder) SQL() string
@@ -692,7 +700,7 @@ func (qb *QueryBuilder) SQL() string
 
 
 <a name="QueryBuilder.SetResults"></a>
-### func \(\*QueryBuilder\) [SetResults](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L428>)
+### func \(\*QueryBuilder\) [SetResults](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L433>)
 
 ```go
 func (qb *QueryBuilder) SetResults(res []any)
@@ -701,7 +709,7 @@ func (qb *QueryBuilder) SetResults(res []any)
 
 
 <a name="SelectOptionFunc"></a>
-## type [SelectOptionFunc](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L475>)
+## type [SelectOptionFunc](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L480>)
 
 SelectOptionFunc represents options of Select query methods.
 
@@ -710,7 +718,7 @@ type SelectOptionFunc func(*SelectOptions)
 ```
 
 <a name="WithLimit"></a>
-### func [WithLimit](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L480>)
+### func [WithLimit](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L485>)
 
 ```go
 func WithLimit(limit uint) SelectOptionFunc
@@ -719,7 +727,7 @@ func WithLimit(limit uint) SelectOptionFunc
 WithLimit sets the \`LIMIT\` clause for a \`SELECT\` query. When the index has a \[Index.DefaultLimit\], WithLimit overrides it. A zero value is ignored and the default limit \(if any\) is used instead.
 
 <a name="WithOffset"></a>
-### func [WithOffset](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L488>)
+### func [WithOffset](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L493>)
 
 ```go
 func WithOffset(offset uint) SelectOptionFunc
@@ -728,7 +736,7 @@ func WithOffset(offset uint) SelectOptionFunc
 WithOffset sets the \`OFFSET\` clause for a \`SELECT\` query. A zero value means no offset is applied.
 
 <a name="WithReplica"></a>
-### func [WithReplica](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L500>)
+### func [WithReplica](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L505>)
 
 ```go
 func WithReplica(use bool) SelectOptionFunc
@@ -743,7 +751,7 @@ WithReplica specifies whether a replica should be used to perform a query:
 If no replica\(s\) are configured, a master will be used instead.
 
 <a name="SelectOptions"></a>
-## type [SelectOptions](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L449-L454>)
+## type [SelectOptions](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L454-L459>)
 
 SelectOptions are intended to be used from unit tests and/or generated code. Do not use it directly.
 
@@ -754,7 +762,7 @@ type SelectOptions struct {
 ```
 
 <a name="NewSelectOptions"></a>
-### func [NewSelectOptions](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L511>)
+### func [NewSelectOptions](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L516>)
 
 ```go
 func NewSelectOptions(optFuncs ...SelectOptionFunc) *SelectOptions
@@ -763,7 +771,7 @@ func NewSelectOptions(optFuncs ...SelectOptionFunc) *SelectOptions
 NewSelectOptions is intended to be used from unit tests and/or generated code. Do not use it directly.
 
 <a name="SelectOptions.Limit"></a>
-### func \(\*SelectOptions\) [Limit](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L457>)
+### func \(\*SelectOptions\) [Limit](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L462>)
 
 ```go
 func (so *SelectOptions) Limit() uint
@@ -772,7 +780,7 @@ func (so *SelectOptions) Limit() uint
 Limit returns the limit set by [WithLimit](<#WithLimit>), or 0 if not set.
 
 <a name="SelectOptions.Offset"></a>
-### func \(\*SelectOptions\) [Offset](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L462>)
+### func \(\*SelectOptions\) [Offset](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L467>)
 
 ```go
 func (so *SelectOptions) Offset() uint
@@ -781,7 +789,7 @@ func (so *SelectOptions) Offset() uint
 Offset returns the offset set by [WithOffset](<#WithOffset>), or 0 if not set.
 
 <a name="SelectOptions.UseMaster"></a>
-### func \(\*SelectOptions\) [UseMaster](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L470>)
+### func \(\*SelectOptions\) [UseMaster](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L475>)
 
 ```go
 func (so *SelectOptions) UseMaster() bool
@@ -790,7 +798,7 @@ func (so *SelectOptions) UseMaster() bool
 
 
 <a name="SelectOptions.UseReplica"></a>
-### func \(\*SelectOptions\) [UseReplica](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L466>)
+### func \(\*SelectOptions\) [UseReplica](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L471>)
 
 ```go
 func (so *SelectOptions) UseReplica() bool
@@ -799,7 +807,7 @@ func (so *SelectOptions) UseReplica() bool
 
 
 <a name="SimpleQuery"></a>
-## type [SimpleQuery](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L342-L346>)
+## type [SimpleQuery](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L347-L351>)
 
 SimpleQuery is a "static" query that isn't indended for modification. Implements the [Query](<#Query>) interface.
 
@@ -810,7 +818,7 @@ type SimpleQuery struct {
 ```
 
 <a name="NewSimpleQuery"></a>
-### func [NewSimpleQuery](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L350>)
+### func [NewSimpleQuery](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L355>)
 
 ```go
 func NewSimpleQuery(query string, args, results []any) *SimpleQuery
@@ -819,7 +827,7 @@ func NewSimpleQuery(query string, args, results []any) *SimpleQuery
 
 
 <a name="SimpleQuery.Args"></a>
-### func \(\*SimpleQuery\) [Args](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L362>)
+### func \(\*SimpleQuery\) [Args](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L367>)
 
 ```go
 func (q *SimpleQuery) Args() []any
@@ -828,7 +836,7 @@ func (q *SimpleQuery) Args() []any
 
 
 <a name="SimpleQuery.Results"></a>
-### func \(\*SimpleQuery\) [Results](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L366>)
+### func \(\*SimpleQuery\) [Results](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L371>)
 
 ```go
 func (q *SimpleQuery) Results() []any
@@ -837,7 +845,7 @@ func (q *SimpleQuery) Results() []any
 
 
 <a name="SimpleQuery.SQL"></a>
-### func \(\*SimpleQuery\) [SQL](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L358>)
+### func \(\*SimpleQuery\) [SQL](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L363>)
 
 ```go
 func (q *SimpleQuery) SQL() string
@@ -846,7 +854,7 @@ func (q *SimpleQuery) SQL() string
 
 
 <a name="StringWriter"></a>
-## type [StringWriter](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L335-L338>)
+## type [StringWriter](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L340-L343>)
 
 StringWriter is implemented by [strings.Builder](<https://pkg.go.dev/strings/#Builder>) and [bytes.Buffer](<https://pkg.go.dev/bytes/#Buffer>), among others.
 
@@ -858,7 +866,7 @@ type StringWriter interface {
 ```
 
 <a name="Table"></a>
-## type [Table](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L41-L124>)
+## type [Table](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L41-L129>)
 
 Table describes a database table. [github.com/my\\\-mail\\\-ru/go\\\-adv\\\-pg/cmd/adv\\\-pg](<https://pkg.go.dev/github.com/my-mail-ru/go-adv-pg/cmd/adv-pg/>) code generator scans the source file for global variable declarations of this type. The variable can have a name or be anonymous \(\`\_\`\), and this doesn't affect the code generation result.
 
@@ -941,6 +949,11 @@ type Table struct {
     // Multi variants) hold the lock for the full duration of the operation, including the
     // database call.
     //
+    // Records are always passed by pointer, so enabling this flag doesn't change any
+    // generated signatures. The mutex guards a Record instance, not the database row:
+    // independently selected records of the same row don't serialize with each other.
+    // Records of a table with EnableLock must never be copied (go vet copylocks).
+    //
     // Compound values (slices, maps, pointers) stored in the model struct can have their
     // internals modified without going through a setter, bypassing the lock.
     //
@@ -970,7 +983,7 @@ type Table struct {
 ```
 
 <a name="Table.Validate"></a>
-### func \(\*Table\) [Validate](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L276>)
+### func \(\*Table\) [Validate](<https://github.com/my-mail-ru/go-adv-pg/blob/master/adv-pg.go#L281>)
 
 ```go
 func (t *Table) Validate() error
